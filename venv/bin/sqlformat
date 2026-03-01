@@ -1,4 +1,4 @@
-#!/Users/adilbekpirnazarov/Desktop/Adv_django/midterm/prostoi-crm/venv/bin/python3.12
+#!/home/prostoi/projects/Prostoi-CRM-project/venv/bin/python3.12
 import sys
 from sqlparse.__main__ import main
 if __name__ == '__main__':

@@ -1,4 +1,4 @@
-#!/Users/adilbekpirnazarov/Desktop/Adv_django/midterm/prostoi-crm/venv/bin/python3.12
+#!/home/prostoi/projects/Prostoi-CRM-project/venv/bin/python3.12
 # -*- coding: utf-8 -*-
 import re
 import sys
