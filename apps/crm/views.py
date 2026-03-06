@@ -9,6 +9,8 @@ from .serializers import (
     ProductSerializer, DealSerializer, TaskSerializer, CommentSerializer,
 )
 
+from django_filters.rest_framework import DjangoFilterBackend
+from .filters import ProductFilter, TaskFilter, DealFilter
 
 class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()
@@ -31,16 +33,26 @@ class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.select_related('category').prefetch_related('tags').all()
     serializer_class = ProductSerializer
     lookup_field = 'slug'
-
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = ProductFilter
+    search_fields = ['name', 'description']
+    ordering_fields = ['price', 'created_at']
 
 class DealViewSet(viewsets.ModelViewSet):
     queryset = Deal.objects.select_related('client', 'product').all()
     serializer_class = DealSerializer
-
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = DealFilter
+    search_fields = ['title']
+    ordering_fields = ['amount', 'created_at']
 
 class TaskViewSet(viewsets.ModelViewSet):
     queryset = Task.objects.select_related('assigned_to', 'client', 'deal').all()
     serializer_class = TaskSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = TaskFilter
+    search_fields = ['title', 'description']
+    ordering_fields = ['due_date', 'created_at']
 
     @action(detail=True, methods=['get', 'post'], url_path='comments')
     def comments(self, request, pk=None):
