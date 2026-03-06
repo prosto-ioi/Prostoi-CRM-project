@@ -1,3 +1,5 @@
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from rest_framework import viewsets
 from django.contrib.contenttypes.models import ContentType
 
@@ -39,6 +41,29 @@ class DealViewSet(viewsets.ModelViewSet):
 class TaskViewSet(viewsets.ModelViewSet):
     queryset = Task.objects.select_related('assigned_to', 'client', 'deal').all()
     serializer_class = TaskSerializer
+
+    @action(detail=True, methods=['get', 'post'], url_path='comments')
+    def comments(self, request, pk=None):
+        task = self.get_object()
+        if request.method == 'GET':
+            comments = Comment.objects.filter(
+                content_type=ContentType.objects.get_for_model(Task),
+                object_id=task.id
+            ).select_related('author')
+            serializer = CommentSerializer(comments, many=True, context={'request': request})
+            return Response(serializer.data)
+        elif request.method == 'POST':
+            serializer = CommentSerializer(data=request.data, context={'request': request})
+            if serializer.is_valid():
+                serializer.save(
+                    author=request.user,
+                    content_type=ContentType.objects.get_for_model(Task),
+                    object_id=task.id
+                )
+                return Response(serializer.data, status=201)
+            return Response(serializer.errors, status=400)
+            
+                                            
 
 # noinspection PyUnresolvedReferences
 class CommentViewSet(viewsets.ModelViewSet):
