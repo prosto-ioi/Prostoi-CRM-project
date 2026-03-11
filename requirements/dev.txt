@@ -1,0 +1,6 @@
+-r base.txt
+
+django-debug-toolbar
+pytest-django
+pytest-cov
+coverage
