@@ -52,7 +52,7 @@ class Client(models.Model):
     phone = models.CharField('Телефон', max_length=20, blank=True, default='')
     address = models.CharField('Адрес', max_length=100, blank=True, default='')
     created_at = models.DateTimeField('Создан', auto_now_add=True)
-    updated_at = models.DateTimeField('Оьнавлен', auto_now=True)
+    updated_at = models.DateTimeField('Обновлен', auto_now=True)
 
     class Meta:
         verbose_name = 'Клиент'
@@ -198,7 +198,7 @@ class Comment(models.Model):
 
     class Meta:
         verbose_name = 'Коментарий'
-        verbose_name_plural = 'Кщментарии'
+        verbose_name_plural = 'Коментарии'
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['content_type', 'object_id']),
