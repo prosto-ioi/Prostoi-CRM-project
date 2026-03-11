@@ -92,7 +92,7 @@ class ProductViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
-extend_schema_view(
+@extend_schema_view(
     list=extend_schema(
         summary='Список сделок',
         description='Фильтры: `?status=new|in_progress|closed_won|closed_lost`, `?client=id`, `?min_amount=1000`, `?max_amount=50000`',
