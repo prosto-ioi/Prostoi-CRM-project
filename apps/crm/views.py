@@ -311,7 +311,7 @@ class CommentViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     """Generic comments attached to a Task or Deal."""
 
     # No PATCH / PUT — comments are append-only by design.
-    http_method_names = ("get", "post", "delete") # type: ignore
+    http_method_names = ("get", "post", "delete")  # type: ignore
     read_serializer_class = CommentReadSerializer
     write_serializer_class = CommentWriteSerializer
 

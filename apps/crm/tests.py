@@ -17,7 +17,7 @@ class BaseTestCase(TestCase):
             first_name="Aliko",
             last_name="Test",
             password="StrongPass123!",
-        )
+        )  # type: ignore
         self.client_api.force_authenticate(user=self.user)
 
 
