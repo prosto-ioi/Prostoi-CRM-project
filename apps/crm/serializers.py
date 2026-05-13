@@ -8,6 +8,7 @@ Every model has two serializers:
       its ``to_representation`` to the Read serializer so the wire shape stays
       consistent for the client.
 """
+
 from __future__ import annotations
 
 # ``PrimaryKeyRelatedField`` / ``SlugRelatedField`` are imported from their
@@ -127,7 +128,9 @@ class ProductWriteSerializer(serializers.ModelSerializer):
     """Product write serializer. ``slug`` and ``created_by`` are set server-side."""
 
     tags = PrimaryKeyRelatedField(
-        queryset=Tag.objects.all(), many=True, required=False,
+        queryset=Tag.objects.all(),
+        many=True,
+        required=False,
     )
 
     class Meta:

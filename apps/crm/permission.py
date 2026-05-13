@@ -5,6 +5,7 @@ Use :mod:`crm.permissions` (plural) instead. All public names from the old
 
 Will be removed in a future release.
 """
+
 from __future__ import annotations
 
 import warnings

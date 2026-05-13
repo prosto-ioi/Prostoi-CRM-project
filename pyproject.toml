@@ -29,6 +29,9 @@ ignore = [
     "E501",   # line too long — handled by formatter
     "B008",   # function call in default argument — DRF idiom
     "RUF012", # mutable class attributes — common in Django ``Meta``
+    "RUF001", # ambiguous unicode — false positive on legitimate Cyrillic text
+    "RUF002", # ambiguous unicode in docstrings — same reason
+    "RUF003", # ambiguous unicode in comments — same reason
 ]
 
 [tool.ruff.lint.isort]

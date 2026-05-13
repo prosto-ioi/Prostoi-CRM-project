@@ -6,6 +6,7 @@ Two classes:
     * :class:`IsOwnerOrReadOnly` — read for any authenticated user, write only
       for the row's "owner" (``author`` / ``created_by`` / ``assigned_to``).
 """
+
 from __future__ import annotations
 
 from typing import Any, ClassVar
@@ -54,7 +55,10 @@ class IsOwnerOrReadOnly(BasePermission):
         return bool(request.user and request.user.is_authenticated)
 
     def has_object_permission(
-        self, request: Request, view: APIView, obj: Any,
+        self,
+        request: Request,
+        view: APIView,
+        obj: Any,
     ) -> bool:
         # Anyone authenticated can read.
         if request.method in SAFE_METHODS:

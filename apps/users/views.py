@@ -1,4 +1,5 @@
 """Authentication endpoints: registration, JWT obtain, JWT refresh."""
+
 from __future__ import annotations
 
 import logging
@@ -122,7 +123,9 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             logger.info("Login successful: %s", email)
         else:
             logger.warning(
-                "Login failed: %s (status=%s)", email, response.status_code,
+                "Login failed: %s (status=%s)",
+                email,
+                response.status_code,
             )
         return response
 

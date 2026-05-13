@@ -3,6 +3,7 @@
 Custom user that uses ``email`` as the unique identifier (no usernames),
 plus per-user UI preferences (``language``, ``timezone``).
 """
+
 from __future__ import annotations
 
 from typing import Any

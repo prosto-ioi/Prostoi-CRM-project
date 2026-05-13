@@ -6,6 +6,7 @@ Design choices:
       anywhere — ``Deal.Status.NEW``, ``Task.Status.PENDING`` etc).
     - Frequently filtered/ordered columns have ``db_index=True``.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -104,10 +105,16 @@ class Product(models.Model):
         verbose_name="category",
     )
     tags = models.ManyToManyField(
-        Tag, blank=True, related_name="products", verbose_name="tags",
+        Tag,
+        blank=True,
+        related_name="products",
+        verbose_name="tags",
     )
     price = models.DecimalField(
-        "price", max_digits=10, decimal_places=2, db_index=True,
+        "price",
+        max_digits=10,
+        decimal_places=2,
+        db_index=True,
     )
     description = models.TextField("description", blank=True, default="")
     in_stock = models.BooleanField("in stock", default=True, db_index=True)
@@ -164,7 +171,10 @@ class Deal(models.Model):
     )
     title = models.CharField("title", max_length=200)
     amount = models.DecimalField(
-        "amount", max_digits=10, decimal_places=2, db_index=True,
+        "amount",
+        max_digits=10,
+        decimal_places=2,
+        db_index=True,
     )
     status = models.CharField(
         "status",

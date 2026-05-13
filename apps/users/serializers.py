@@ -1,4 +1,5 @@
 """Serializers for the users app: registration, JWT, profile read."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -72,13 +73,13 @@ class UserWriteSerializer(serializers.ModelSerializer):
     response so the password is never written back.
     """
 
-    password = serializers.CharField( # type: ignore
+    password = serializers.CharField(  # type: ignore
         write_only=True,
         required=True,
         validators=[validate_password],
         style={"input_type": "password"},
     )
-    password2 = serializers.CharField( # type: ignore
+    password2 = serializers.CharField(  # type: ignore
         write_only=True,
         required=True,
         style={"input_type": "password"},
@@ -108,7 +109,7 @@ class UserWriteSerializer(serializers.ModelSerializer):
         UI can highlight the right field.
         """
         if attrs.get("password") != attrs.get("password2"):
-            raise serializers.ValidationError( # type: ignore
+            raise serializers.ValidationError(  # type: ignore
                 {"password2": "Passwords do not match."},
             )
         return attrs
