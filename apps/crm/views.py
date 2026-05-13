@@ -6,6 +6,7 @@ through :meth:`get_permissions` — ``create`` is generally open to any
 authenticated user, while ``update`` / ``partial_update`` / ``destroy`` are
 restricted to the row's owner (or staff).
 """
+
 from __future__ import annotations
 
 from typing import ClassVar, cast
@@ -278,18 +279,28 @@ class TaskViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
         task_ct = ContentType.objects.get_for_model(Task)
 
         if request.method == "GET":
-            qs = (
-                Comment.objects
-                .filter(content_type=task_ct, object_id=task.id)
-                .select_related("author")
+            qs = Comment.objects.filter(content_type=task_ct, object_id=task.id).select_related(
+                "author"
             )
             data = CommentReadSerializer(qs, many=True, context={"request": request}).data
             return Response(data, status=status.HTTP_200_OK)
 
-        # POST — author / content_type / object_id are server-controlled.
-        writer = CommentWriteSerializer(data=request.data, context={"request": request})
+        # POST — server fills in content_type/object_id from URL context, so
+        # the client only needs to send ``body``. We inject them BEFORE
+        # validation rather than passing them via save() — otherwise the
+        # serializer's "this field is required" check fires first.
+        #
+        # ``request.data`` is either a plain ``dict`` (JSON body) or a Django
+        # ``QueryDict`` (form-data). Both expose ``.copy()`` and accept
+        # subscript assignment, so this works uniformly — using ``{**...}``
+        # instead would unpack QueryDict values as one-element lists.
+        payload = request.data.copy()
+        payload["content_type"] = "task"
+        payload["object_id"] = task.id
+        writer = CommentWriteSerializer(data=payload, context={"request": request})
         writer.is_valid(raise_exception=True)
-        writer.save(author=request.user, content_type=task_ct, object_id=task.id)
+        # ``author`` is the only field the user is never allowed to set.
+        writer.save(author=request.user)
         return Response(writer.data, status=status.HTTP_201_CREATED)
 
 
@@ -311,7 +322,7 @@ class CommentViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     """Generic comments attached to a Task or Deal."""
 
     # No PATCH / PUT — comments are append-only by design.
-    http_method_names = ("get", "post", "delete") # type: ignore
+    http_method_names = ("get", "post", "delete")  # type: ignore
     read_serializer_class = CommentReadSerializer
     write_serializer_class = CommentWriteSerializer
 
