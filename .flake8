@@ -1,0 +1,23 @@
+[flake8]
+max-line-length = 100
+extend-exclude =
+    */migrations/*,
+    manage.py,
+    venv,
+    .venv,
+    env,
+    .env,
+    staticfiles,
+    media
+
+# Pair well with black/ruff-format:
+#   E203 — whitespace before ':' (PEP8-ambiguous, formatter wins)
+#   W503 — line break before binary operator (PEP8 now prefers this)
+extend-ignore = E203, W503
+
+per-file-ignores =
+    apps/*/migrations/*:E501,W,F
+    apps/*/tests.py:E501
+
+# Counted alongside ruff. Run:
+#   flake8 apps/ settings/

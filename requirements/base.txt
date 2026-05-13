@@ -6,3 +6,5 @@ django-filter
 drf-spectacular
 Pillow
 python-dotenv
+django-stubs
+djangorestframework-stubs

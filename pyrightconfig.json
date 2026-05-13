@@ -1,0 +1,37 @@
+{
+  "venvPath": ".",
+  "venv": "venv",
+
+  "//": "settings/base.py inserts apps/ into sys.path; mirror that here so",
+  "//_": "Pylance resolves `from users.models import User` the same way.",
+  "extraPaths": ["apps"],
+
+  "pythonVersion": "3.10",
+  "pythonPlatform": "All",
+
+  "exclude": [
+    "**/migrations",
+    "**/__pycache__",
+    "venv",
+    ".venv",
+    "staticfiles",
+    "media"
+  ],
+
+  "typeCheckingMode": "basic",
+
+  "//__": "These are noisy with Django even with django-stubs installed",
+  "//___": "(metaclass-generated attrs, magic managers). Keep them off.",
+  "reportUnknownMemberType": "none",
+  "reportUnknownVariableType": "none",
+  "reportUnknownParameterType": "none",
+  "reportUnknownArgumentType": "none",
+  "reportUnknownLambdaType": "none",
+
+  "//____": "These we DO want — they catch real bugs.",
+  "reportMissingTypeArgument": "warning",
+  "reportMissingImports": "error",
+  "reportUndefinedVariable": "error",
+  "reportInvalidTypeVarUse": "warning",
+  "reportGeneralTypeIssues": "warning"
+}

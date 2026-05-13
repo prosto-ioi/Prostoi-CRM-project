@@ -1,115 +1,149 @@
+"""Authentication endpoints: registration, JWT obtain, JWT refresh."""
+
+from __future__ import annotations
+
 import logging
-from rest_framework import status, generics, permissions
+from typing import Any
+
+from drf_spectacular.utils import OpenApiExample, extend_schema
+from rest_framework import status
+from rest_framework.permissions import AllowAny
+from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
-from drf_spectacular.utils import extend_schema, OpenApiExample
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+
 from .serializers import (
-    UserRegistrationSerializer, UserResponseSerializer, CustomTokenObtainPairSerializer
+    CustomTokenObtainPairSerializer,
+    UserReadSerializer,
+    UserWriteSerializer,
 )
 
 logger = logging.getLogger(__name__)
 
 
-class RegistrationView(generics.CreateAPIView):
+class RegistrationView(APIView):
+    """Register a new user and immediately issue a JWT token pair.
 
-    serializer_class = UserRegistrationSerializer
-    permission_classes = [permissions.AllowAny]
+    Public endpoint — no authentication required.
 
+    Responses:
+        * ``201 Created`` — ``{access, refresh, user}`` for the new user.
+        * ``400 Bad Request`` — validation error (duplicate email, weak
+          password, mismatched confirmation, missing required field, ...).
+    """
+
+    permission_classes = (AllowAny,)
+    # Class-level attr lets DRF Spectacular introspect the request shape.
+    serializer_class = UserWriteSerializer
 
     @extend_schema(
-        summary='Регистрация пользователя',
-        description=('Создаёт нового пользователя и возвращает пару JWT токенов.\n\n'
-                     'Не требует аутентификации.\n\n'
-                     '**Поля:** email, first_name, last_name, password, password2, language, timezone'),
-        tags=['Auth'],
-        request=UserRegistrationSerializer,
-        responses={201: UserRegistrationSerializer, 400: None, },
+        summary="Register a new user",
+        description=(
+            "Creates a new user and returns a JWT token pair plus the public "
+            "user payload.\n\nNo authentication required.\n\n"
+            "Fields: email, first_name, last_name, password, password2, "
+            "language, timezone."
+        ),
+        tags=["Auth"],
+        request=UserWriteSerializer,
+        responses={
+            status.HTTP_201_CREATED: UserReadSerializer,
+            status.HTTP_400_BAD_REQUEST: None,
+        },
         examples=[
             OpenApiExample(
-                'Пример запроса',
+                "Sample request",
                 value={
-                    'email': 'user@gmail.com',
-                    'first_name': 'Алихан',
-                    'last_name': 'Сейткали',
-                    'password': 'StrongPass123!',
-                    'password2': 'StrongPass123!',
-                    'language': 'ru',
-                    'timezone': 'Asia/Almaty',
+                    "email": "user@example.com",
+                    "first_name": "Alikhan",
+                    "last_name": "Seitkali",
+                    "password": "StrongPass123!",
+                    "password2": "StrongPass123!",
+                    "language": "en",
+                    "timezone": "Asia/Almaty",
                 },
                 request_only=True,
             ),
         ],
-
     )
-    def create(self, request, *args, **kwargs):
-        email = request.data.get('email', '')
-        logger.info(f'Registration attempt: {email}')
+    def post(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        email: str = request.data.get("email", "")
+        logger.info("Registration attempt: %s", email)
 
-        serializer = self.get_serializer(data=request.data)
+        # Validate + create explicitly — no reliance on generics magic.
+        serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
 
+        # Issue tokens immediately so the client doesn't need a second hop.
         refresh = RefreshToken.for_user(user)
+        logger.info("Registration successful: %s", email)
 
-        logger.info(f'Registration successful: {email}')
-
-        response_data = {
-            'access': str(refresh.access_token),
-            'refresh': str(refresh),
-            'user': UserResponseSerializer(user).data
+        payload: dict[str, Any] = {
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            "user": UserReadSerializer(user, context={"request": request}).data,
         }
-        return Response(response_data, status=status.HTTP_201_CREATED)
+        return Response(payload, status=status.HTTP_201_CREATED)
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
-    serializer_class = CustomTokenObtainPairSerializer
-    permission_classes = [permissions.AllowAny]
+    """Login — exchange (email, password) for a JWT token pair."""
 
+    serializer_class = CustomTokenObtainPairSerializer
+    permission_classes = (AllowAny,)
 
     @extend_schema(
-        summary='Получить токены (логин)',
+        summary="Obtain JWT token pair (login)",
         description=(
-            'Принимает email и пароль, возвращает access и refresh токены.\n\n'
-            'Не требует аутентификации.'
+            "Accepts email and password, returns access and refresh tokens. "
+            "No authentication required."
         ),
-        tags=['Auth'],
+        tags=["Auth"],
         responses={
-            200: CustomTokenObtainPairSerializer,
-            400: None,
-            401: None,
+            status.HTTP_200_OK: CustomTokenObtainPairSerializer,
+            status.HTTP_400_BAD_REQUEST: None,
+            status.HTTP_401_UNAUTHORIZED: None,
         },
         examples=[
             OpenApiExample(
-                'Пример запроса',
-                value={'email': 'user@example.com', 'password': 'StrongPass123!'},
+                "Sample request",
+                value={"email": "user@example.com", "password": "StrongPass123!"},
                 request_only=True,
             ),
         ],
     )
-    def post(self, request, *args, **kwargs):
-        email = request.data.get('email', '')
-        logger.info(f'Login attempt: {email}')
-        try:
-            response = super().post(request, *args, **kwargs)
-            if response.status_code == 200:
-                logger.info(f'Login successful: {email}')
-            else:
-                logger.warning(f'Login failed: {email}')
-            return response
-        except Exception as e:
-            logger.error(f'Login error: {email}, {str(e)}')
-            raise
+    def post(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        email: str = request.data.get("email", "")
+        logger.info("Login attempt: %s", email)
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == status.HTTP_200_OK:
+            logger.info("Login successful: %s", email)
+        else:
+            logger.warning(
+                "Login failed: %s (status=%s)",
+                email,
+                response.status_code,
+            )
+        return response
 
 
 class CustomTokenRefreshView(TokenRefreshView):
-    permission_classes = [permissions.AllowAny]
+    """Exchange a valid refresh token for a fresh access token."""
+
+    permission_classes = (AllowAny,)
 
     @extend_schema(
-        summary='Обновить access токен',
-        description='Принимает refresh токен, возвращает новый access токен.',
-        tags=['Auth'],
-        responses={200: None, 400: None, 401: None},
+        summary="Refresh access token",
+        description="Accepts a refresh token, returns a new access token.",
+        tags=["Auth"],
+        responses={
+            status.HTTP_200_OK: None,
+            status.HTTP_400_BAD_REQUEST: None,
+            status.HTTP_401_UNAUTHORIZED: None,
+        },
     )
-    def post(self, request, *args, **kwargs):
+    def post(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         return super().post(request, *args, **kwargs)

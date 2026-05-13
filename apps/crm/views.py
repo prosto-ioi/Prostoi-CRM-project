@@ -1,207 +1,347 @@
-from rest_framework import viewsets
-from rest_framework.decorators import action
-from rest_framework.response import Response
+"""CRM viewsets — clients, categories, tags, products, deals, tasks, comments.
+
+Every viewset selects between a Read and a Write serializer via
+:meth:`get_serializer_class`. Object-level permissions are split per action
+through :meth:`get_permissions` — ``create`` is generally open to any
+authenticated user, while ``update`` / ``partial_update`` / ``destroy`` are
+restricted to the row's owner (or staff).
+"""
+from __future__ import annotations
+
+from typing import ClassVar, cast
+
 from django.contrib.contenttypes.models import ContentType
+from django.db.models import QuerySet
 from django_filters.rest_framework import DjangoFilterBackend
-from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiParameter
 from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
+from rest_framework import status, viewsets
+from rest_framework.decorators import action
+from rest_framework.permissions import BasePermission, IsAuthenticated
+from rest_framework.request import Request
+from rest_framework.response import Response
+from rest_framework.serializers import BaseSerializer
 
-
-from .models import Category, Tag, Client, Product, Deal, Task, Comment
+from .filters import DealFilter, ProductFilter, TaskFilter
+from .models import Category, Client, Comment, Deal, Product, Tag, Task
+from .permissions import IsAdminOrReadOnly, IsOwnerOrReadOnly
 from .serializers import (
-    CategorySerializer, TagSerializer, ClientSerializer,
-    ProductSerializer, DealSerializer, TaskSerializer, CommentSerializer,
+    CategoryReadSerializer,
+    CategoryWriteSerializer,
+    ClientReadSerializer,
+    ClientWriteSerializer,
+    CommentReadSerializer,
+    CommentWriteSerializer,
+    DealReadSerializer,
+    DealWriteSerializer,
+    ProductReadSerializer,
+    ProductWriteSerializer,
+    TagReadSerializer,
+    TagWriteSerializer,
+    TaskReadSerializer,
+    TaskWriteSerializer,
 )
-from .permission import IsOwnerOrReadOnly, IsStaffOrReadOnly, IsCommentAuthor
-from .filters import ProductFilter, DealFilter, TaskFilter
+
+# Actions that mutate state — used by the Read/Write serializer switcher.
+_WRITE_ACTIONS: frozenset[str] = frozenset({"create", "update", "partial_update"})
+
+# Actions that touch a single existing row — used to pick object-level perms.
+_OBJECT_MUTATE_ACTIONS: frozenset[str] = frozenset({"update", "partial_update", "destroy"})
 
 
+def _current_action(viewset: viewsets.GenericViewSet) -> str | None:
+    """Return ``viewset.action`` safely.
+
+    ``action`` is set on the instance by DRF's ``ViewSetMixin.initialize_request``
+    at runtime; Pyright cannot see it via static analysis, so we read it with
+    ``getattr`` and a fallback. This avoids ``reportAttributeAccessIssue`` while
+    keeping behaviour identical.
+    """
+    return getattr(viewset, "action", None)
+
+
+class ReadWriteSerializerMixin:
+    """Mixin: pick the write serializer for mutating actions, otherwise read."""
+
+    read_serializer_class: ClassVar[type[BaseSerializer]]
+    write_serializer_class: ClassVar[type[BaseSerializer]]
+
+    def get_serializer_class(self) -> type[BaseSerializer]:
+        # ``self`` is a viewset at runtime — the cast keeps type checkers happy
+        # about the ``action`` lookup.
+        action_name = _current_action(cast(viewsets.GenericViewSet, self))
+        if action_name in _WRITE_ACTIONS:
+            return self.write_serializer_class
+        return self.read_serializer_class
+
+
+# ──────────────────────────────── Category ────────────────────────────────
 @extend_schema_view(
-    list=extend_schema(summary='Список категорий', tags=['Categories']),
-    retrieve=extend_schema(summary='Детали категории', tags=['Categories']),
-    create=extend_schema(summary='Создать категорию', description='Только staff/admin', tags=['Categories'], responses={201: CategorySerializer, 400: None, 403: None}),
-    update=extend_schema(summary='Обновить категорию (PUT)', tags=['Categories']),
-    partial_update=extend_schema(summary='Обновить категорию (PATCH)', tags=['Categories']),
-    destroy=extend_schema(summary='Удалить категорию', tags=['Categories']),
+    list=extend_schema(summary="List categories", tags=["Categories"]),
+    retrieve=extend_schema(summary="Retrieve category", tags=["Categories"]),
+    create=extend_schema(summary="Create category (staff only)", tags=["Categories"]),
+    update=extend_schema(summary="Replace category (staff only)", tags=["Categories"]),
+    partial_update=extend_schema(summary="Patch category (staff only)", tags=["Categories"]),
+    destroy=extend_schema(summary="Delete category (staff only)", tags=["Categories"]),
 )
-class CategoryViewSet(viewsets.ModelViewSet):
+class CategoryViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
+    """Public to read; staff-only to write."""
+
     queryset = Category.objects.all()
-    serializer_class = CategorySerializer
-    lookup_field = 'slug'
-    permission_classes = [IsStaffOrReadOnly]
+    lookup_field = "slug"
+    permission_classes = (IsAdminOrReadOnly,)
+    read_serializer_class = CategoryReadSerializer
+    write_serializer_class = CategoryWriteSerializer
 
 
+# ──────────────────────────────── Tag ────────────────────────────────
 @extend_schema_view(
-    list=extend_schema(summary='Список тегов', tags=['Tags']),
-    retrieve=extend_schema(summary='Детали тега', tags=['Tags']),
-    create=extend_schema(summary='Создать тег', description='Только staff/admin', tags=['Tags']),
-    update=extend_schema(summary='Обновить тег (PUT)', tags=['Tags']),
-    partial_update=extend_schema(summary='Обновить тег (PATCH)', tags=['Tags']),
-    destroy=extend_schema(summary='Удалить тег', tags=['Tags']),
+    list=extend_schema(summary="List tags", tags=["Tags"]),
+    retrieve=extend_schema(summary="Retrieve tag", tags=["Tags"]),
+    create=extend_schema(summary="Create tag (staff only)", tags=["Tags"]),
+    update=extend_schema(summary="Replace tag (staff only)", tags=["Tags"]),
+    partial_update=extend_schema(summary="Patch tag (staff only)", tags=["Tags"]),
+    destroy=extend_schema(summary="Delete tag (staff only)", tags=["Tags"]),
 )
-class TagViewSet(viewsets.ModelViewSet):
+class TagViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
+    """Public to read; staff-only to write."""
+
     queryset = Tag.objects.all()
-    serializer_class = TagSerializer
-    lookup_field = 'slug'
-    permission_classes = [IsStaffOrReadOnly]
+    lookup_field = "slug"
+    permission_classes = (IsAdminOrReadOnly,)
+    read_serializer_class = TagReadSerializer
+    write_serializer_class = TagWriteSerializer
 
 
+# ──────────────────────────────── Client ────────────────────────────────
 @extend_schema_view(
-    list=extend_schema(summary='Список клиентов',description='Поддерживает пагинацию' , tags=['Clients']),
-    retrieve=extend_schema(summary='Детали клиента', tags=['Clients']),
-    create=extend_schema(summary='Создать клиента', description='Email должен быть уникальным.', tags=['Clients'], responses={201: CategorySerializer, 400: None, 401: None}),
-    update=extend_schema(summary='Обновить клиента (PUT)', tags=['Clients']),
-    partial_update=extend_schema(summary='Обновить клиента (PATCH)', tags=['Clients']),
-    destroy=extend_schema(summary='Удалить клиента', tags=['Clients']),
+    list=extend_schema(summary="List clients", tags=["Clients"]),
+    retrieve=extend_schema(summary="Retrieve client", tags=["Clients"]),
+    create=extend_schema(summary="Create client", tags=["Clients"]),
+    update=extend_schema(summary="Replace client", tags=["Clients"]),
+    partial_update=extend_schema(summary="Patch client", tags=["Clients"]),
+    destroy=extend_schema(summary="Delete client", tags=["Clients"]),
 )
-class ClientViewSet(viewsets.ModelViewSet):
+class ClientViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
+    """Any authenticated user can manage clients (no per-row ownership)."""
+
     queryset = Client.objects.all()
-    serializer_class = ClientSerializer
-    permission_classes = [IsOwnerOrReadOnly]
+    permission_classes = (IsAuthenticated,)
+    read_serializer_class = ClientReadSerializer
+    write_serializer_class = ClientWriteSerializer
 
+
+# ──────────────────────────────── Product ────────────────────────────────
 @extend_schema_view(
     list=extend_schema(
-        summary='Список продуктов',
-        description='Фильтры: `?category=slug`, `?min_price=100`, `?max_price=500`, `?in_stock=true`, `?search=...`, `?ordering=price`',
-        tags=['Products'],
+        summary="List products",
+        description=(
+            "Filters: `?category=slug`, `?min_price=100`, `?max_price=500`, "
+            "`?in_stock=true`, `?search=...`, `?ordering=price`."
+        ),
+        tags=["Products"],
         parameters=[
-            OpenApiParameter('category', OpenApiTypes.STR, description='Slug категории'),
-            OpenApiParameter('min_price', OpenApiTypes.NUMBER, description='Минимальная цена'),
-            OpenApiParameter('max_price', OpenApiTypes.NUMBER, description='Максимальная цена'),
-            OpenApiParameter('in_stock', OpenApiTypes.BOOL, description='Только в наличии'),
-            OpenApiParameter('search', OpenApiTypes.STR, description='Поиск по названию и описанию'),
-            OpenApiParameter('ordering', OpenApiTypes.STR, description='Сортировка: price, -price, created_at'),
+            OpenApiParameter("category", OpenApiTypes.STR, description="Category slug"),
+            OpenApiParameter("min_price", OpenApiTypes.NUMBER, description="Min price"),
+            OpenApiParameter("max_price", OpenApiTypes.NUMBER, description="Max price"),
+            OpenApiParameter("in_stock", OpenApiTypes.BOOL, description="In stock only"),
+            OpenApiParameter("search", OpenApiTypes.STR, description="Search name/description"),
+            OpenApiParameter(
+                "ordering",
+                OpenApiTypes.STR,
+                description="price | -price | created_at",
+            ),
         ],
     ),
-    retrieve=extend_schema(summary='Детали продукта (по slug)', tags=['Products']),
-    create=extend_schema(summary='Создать продукт', description='`created_by` устанавливается автоматически.', tags=['Products'], responses={201: ProductSerializer, 400: None, 401: None}),
-    update=extend_schema(summary='Обновить продукт (PUT)', tags=['Products']),
-    partial_update=extend_schema(summary='Обновить продукт (PATCH)', tags=['Products']),
-    destroy=extend_schema(summary='Удалить продукт', description='Только создатель или staff.', tags=['Products'], responses={204: None, 403: None, 404: None}),
+    retrieve=extend_schema(summary="Retrieve product (by slug)", tags=["Products"]),
+    create=extend_schema(summary="Create product", tags=["Products"]),
+    update=extend_schema(summary="Replace product (owner/staff)", tags=["Products"]),
+    partial_update=extend_schema(summary="Patch product (owner/staff)", tags=["Products"]),
+    destroy=extend_schema(summary="Delete product (owner/staff)", tags=["Products"]),
 )
-class ProductViewSet(viewsets.ModelViewSet):
-    queryset = Product.objects.select_related('category').prefetch_related('tags').all()
-    serializer_class = ProductSerializer
-    lookup_field = 'slug'
-    permission_classes = [IsOwnerOrReadOnly]
-    filter_backends = [DjangoFilterBackend]
+class ProductViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
+    """Create is open to any authenticated user; per-row mutation is owner-only."""
+
+    queryset = Product.objects.select_related("category", "created_by").prefetch_related("tags")
+    lookup_field = "slug"
+    filter_backends = (DjangoFilterBackend,)
     filterset_class = ProductFilter
-    search_fields = ['name', 'description']
-    ordering_fields = ['price', 'created_at']
+    search_fields = ("name", "description")
+    ordering_fields = ("price", "created_at")
+    read_serializer_class = ProductReadSerializer
+    write_serializer_class = ProductWriteSerializer
 
-    def perform_create(self, serializer):
+    def get_permissions(self) -> list[BasePermission]:
+        """``update`` / ``destroy`` → owner-only; anything else → authenticated."""
+        if _current_action(self) in _OBJECT_MUTATE_ACTIONS:
+            return [IsOwnerOrReadOnly()]
+        return [IsAuthenticated()]
+
+    def perform_create(self, serializer: BaseSerializer) -> None:
+        # Stamp ``created_by`` from the request — never trust client input.
         serializer.save(created_by=self.request.user)
 
+
+# ──────────────────────────────── Deal ────────────────────────────────
 @extend_schema_view(
     list=extend_schema(
-        summary='Список сделок',
-        description='Фильтры: `?status=new|in_progress|closed_won|closed_lost`, `?client=id`, `?min_amount=1000`, `?max_amount=50000`',
-        tags=['Deals'],
+        summary="List deals",
+        description=(
+            "Filters: `?status=new|in_progress|closed_won|closed_lost`, "
+            "`?client=id`, `?min_amount=1000`, `?max_amount=50000`."
+        ),
+        tags=["Deals"],
         parameters=[
-            OpenApiParameter('status', OpenApiTypes.STR, description='Статус сделки'),
-            OpenApiParameter('client', OpenApiTypes.INT, description='ID клиента'),
-            OpenApiParameter('min_amount', OpenApiTypes.NUMBER, description='Минимальная сумма'),
-            OpenApiParameter('max_amount', OpenApiTypes.NUMBER, description='Максимальная сумма'),
+            OpenApiParameter("status", OpenApiTypes.STR, description="Deal status"),
+            OpenApiParameter("client", OpenApiTypes.INT, description="Client id"),
+            OpenApiParameter("min_amount", OpenApiTypes.NUMBER, description="Min amount"),
+            OpenApiParameter("max_amount", OpenApiTypes.NUMBER, description="Max amount"),
         ],
     ),
-    retrieve=extend_schema(summary='Детали сделки', tags=['Deals']),
-    create=extend_schema(summary='Создать сделку', description='`created_by` устанавливается автоматически.', tags=['Deals'], responses={201: DealSerializer, 400: None, 401: None}),
-    update=extend_schema(summary='Обновить сделку (PUT)', tags=['Deals']),
-    partial_update=extend_schema(summary='Обновить сделку (PATCH)', tags=['Deals']),
-    destroy=extend_schema(summary='Удалить сделку', description='Только создатель или staff.', tags=['Deals'], responses={204: None, 403: None, 404: None}),
+    retrieve=extend_schema(summary="Retrieve deal", tags=["Deals"]),
+    create=extend_schema(summary="Create deal", tags=["Deals"]),
+    update=extend_schema(summary="Replace deal (owner/staff)", tags=["Deals"]),
+    partial_update=extend_schema(summary="Patch deal (owner/staff)", tags=["Deals"]),
+    destroy=extend_schema(summary="Delete deal (owner/staff)", tags=["Deals"]),
 )
-class DealViewSet(viewsets.ModelViewSet):
-    queryset = Deal.objects.select_related('client', 'product').all()
-    serializer_class = DealSerializer
-    permission_classes = [IsOwnerOrReadOnly]
-    filter_backends = [DjangoFilterBackend]
+class DealViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
+    """Create is open to any authenticated user; per-row mutation is owner-only."""
+
+    queryset = Deal.objects.select_related("client", "product", "created_by")
+    filter_backends = (DjangoFilterBackend,)
     filterset_class = DealFilter
-    search_fields = ['title']
-    ordering_fields = ['amount', 'created_at']
+    search_fields = ("title",)
+    ordering_fields = ("amount", "created_at")
+    read_serializer_class = DealReadSerializer
+    write_serializer_class = DealWriteSerializer
 
-    def perform_create(self, serializer):
+    def get_permissions(self) -> list[BasePermission]:
+        if _current_action(self) in _OBJECT_MUTATE_ACTIONS:
+            return [IsOwnerOrReadOnly()]
+        return [IsAuthenticated()]
+
+    def perform_create(self, serializer: BaseSerializer) -> None:
         serializer.save(created_by=self.request.user)
 
+
+# ──────────────────────────────── Task ────────────────────────────────
 @extend_schema_view(
     list=extend_schema(
-        summary='Список задач',
-        description='Фильтры: `?status=pending|in_progress|completed`, `?assigned_to=id`, `?client=id`, `?deal=id`',
-        tags=['Tasks'],
+        summary="List tasks",
+        description=(
+            "Filters: `?status=pending|in_progress|completed`, "
+            "`?assigned_to=id`, `?client=id`, `?deal=id`."
+        ),
+        tags=["Tasks"],
         parameters=[
-            OpenApiParameter('status', OpenApiTypes.STR, description='Статус задачи'),
-            OpenApiParameter('assigned_to', OpenApiTypes.INT, description='ID исполнителя'),
-            OpenApiParameter('client', OpenApiTypes.INT, description='ID клиента'),
-            OpenApiParameter('deal', OpenApiTypes.INT, description='ID сделки'),
+            OpenApiParameter("status", OpenApiTypes.STR, description="Task status"),
+            OpenApiParameter("assigned_to", OpenApiTypes.INT, description="Assignee id"),
+            OpenApiParameter("client", OpenApiTypes.INT, description="Client id"),
+            OpenApiParameter("deal", OpenApiTypes.INT, description="Deal id"),
         ],
     ),
-    retrieve=extend_schema(summary='Детали задачи', tags=['Tasks']),
-    create=extend_schema(summary='Создать задачу', tags=['Tasks']),
-    update=extend_schema(summary='Обновить задачу (PUT)', tags=['Tasks']),
-    partial_update=extend_schema(summary='Обновить задачу (PATCH)', tags=['Tasks']),
-    destroy=extend_schema(summary='Удалить задачу', tags=['Tasks']),
+    retrieve=extend_schema(summary="Retrieve task", tags=["Tasks"]),
+    create=extend_schema(summary="Create task", tags=["Tasks"]),
+    update=extend_schema(summary="Replace task (assignee/staff)", tags=["Tasks"]),
+    partial_update=extend_schema(summary="Patch task (assignee/staff)", tags=["Tasks"]),
+    destroy=extend_schema(summary="Delete task (assignee/staff)", tags=["Tasks"]),
 )
-class TaskViewSet(viewsets.ModelViewSet):
-    queryset = Task.objects.select_related('assigned_to', 'client', 'deal').all()
-    serializer_class = TaskSerializer
-    permission_classes = [IsOwnerOrReadOnly]
-    filter_backends = [DjangoFilterBackend]
+class TaskViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
+    """Only the assignee (or staff) can mutate a task."""
+
+    queryset = Task.objects.select_related("assigned_to", "client", "deal")
+    filter_backends = (DjangoFilterBackend,)
     filterset_class = TaskFilter
-    search_fields = ['title', 'description']
-    ordering_fields = ['due_date', 'created_at']
+    search_fields = ("title", "description")
+    ordering_fields = ("due_date", "created_at")
+    read_serializer_class = TaskReadSerializer
+    write_serializer_class = TaskWriteSerializer
+
+    def get_permissions(self) -> list[BasePermission]:
+        if _current_action(self) in _OBJECT_MUTATE_ACTIONS:
+            return [IsOwnerOrReadOnly()]
+        return [IsAuthenticated()]
 
     @extend_schema(
-        summary='Комментарии к задаче',
-        description='GET — список комментариев задачи. POST — добавить комментарий.',
-        tags=['Tasks'],
-        responses={200: CommentSerializer(many=True), 201: CommentSerializer},
+        summary="Task comments",
+        description="GET — list this task's comments. POST — add a comment.",
+        tags=["Tasks"],
+        responses={
+            status.HTTP_200_OK: CommentReadSerializer(many=True),
+            status.HTTP_201_CREATED: CommentReadSerializer,
+        },
     )
-    @action(detail=True, methods=['get', 'post'], url_path='comments')
-    def comments(self, request, pk=None):
+    @action(detail=True, methods=["get", "post"], url_path="comments")
+    def comments(self, request: Request, pk: int | None = None) -> Response:
+        """Nested convenience endpoint for a single task's comments."""
         task = self.get_object()
-        if request.method == 'GET':
-            comments = Comment.objects.filter(
-                content_type=ContentType.objects.get_for_model(Task),
-                object_id=task.id
-            ).select_related('author')
-            serializer = CommentSerializer(comments, many=True, context={'request': request})
-            return Response(serializer.data)
-        elif request.method == 'POST':
-            serializer = CommentSerializer(data=request.data, context={'request': request})
-            if serializer.is_valid():
-                serializer.save(
-                    author=request.user,
-                    content_type=ContentType.objects.get_for_model(Task),
-                    object_id=task.id
-                )
-                return Response(serializer.data, status=201)
-            return Response(serializer.errors, status=400)
+        task_ct = ContentType.objects.get_for_model(Task)
 
+        if request.method == "GET":
+            qs = (
+                Comment.objects
+                .filter(content_type=task_ct, object_id=task.id)
+                .select_related("author")
+            )
+            data = CommentReadSerializer(qs, many=True, context={"request": request}).data
+            return Response(data, status=status.HTTP_200_OK)
+
+        # POST — author / content_type / object_id are server-controlled.
+        writer = CommentWriteSerializer(data=request.data, context={"request": request})
+        writer.is_valid(raise_exception=True)
+        writer.save(author=request.user, content_type=task_ct, object_id=task.id)
+        return Response(writer.data, status=status.HTTP_201_CREATED)
+
+
+# ──────────────────────────────── Comment ────────────────────────────────
 @extend_schema_view(
     list=extend_schema(
-        summary='Список комментариев',
-        description='Фильтрация: `?target=deal|task`, `?object_id=1`',
-        tags=['Comments'],
+        summary="List comments",
+        description="Filters: `?target=deal|task`, `?object_id=1`.",
+        tags=["Comments"],
         parameters=[
-            OpenApiParameter('target', OpenApiTypes.STR, description='Тип объекта: deal или task'),
-            OpenApiParameter('object_id', OpenApiTypes.INT, description='ID объекта'),
+            OpenApiParameter("target", OpenApiTypes.STR, description="Target model: deal | task"),
+            OpenApiParameter("object_id", OpenApiTypes.INT, description="Target object id"),
         ],
     ),
-    create=extend_schema(summary='Создать комментарий', description='`author` устанавливается автоматически.', tags=['Comments']),
-    destroy=extend_schema(summary='Удалить комментарий', description='Только автор или staff.', tags=['Comments'], responses={204: None, 403: None, 404: None}),
+    create=extend_schema(summary="Create comment", tags=["Comments"]),
+    destroy=extend_schema(summary="Delete comment (author/staff)", tags=["Comments"]),
 )
-class CommentViewSet(viewsets.ModelViewSet):
-    serializer_class = CommentSerializer
-    http_method_names = ['get', 'post', 'delete']
-    permission_classes = [IsCommentAuthor]
+class CommentViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
+    """Generic comments attached to a Task or Deal."""
 
-    def get_queryset(self):
-        qs = Comment.objects.select_related('author', 'content_type').all()
-        target = self.request.query_params.get('target')
-        object_id = self.request.query_params.get('object_id')
+    # No PATCH / PUT — comments are append-only by design.
+    http_method_names = ("get", "post", "delete") # type: ignore
+    read_serializer_class = CommentReadSerializer
+    write_serializer_class = CommentWriteSerializer
+
+    def get_permissions(self) -> list[BasePermission]:
+        # Only the author (or staff) can delete; anyone authenticated can list/create.
+        if _current_action(self) == "destroy":
+            return [IsOwnerOrReadOnly()]
+        return [IsAuthenticated()]
+
+    def get_queryset(self) -> QuerySet[Comment]:
+        # ``self.request`` is a DRF ``Request`` at runtime, but DRF generics
+        # type it as Django's ``HttpRequest`` — re-bind it locally so Pylance
+        # sees the right surface (``query_params``, ``data``, ``user`` …).
+        request: Request = self.request  # type: ignore[assignment]
+        qs: QuerySet[Comment] = Comment.objects.select_related("author", "content_type")
+        target: str | None = request.query_params.get("target")
+        object_id: str | None = request.query_params.get("object_id")
+
         if target:
-            ct = ContentType.objects.filter(model=target).first()
-            if ct:
-                qs = qs.filter(content_type=ct)
+            # ``model__iexact`` keeps the lookup case-insensitive and safe.
+            ct = ContentType.objects.filter(model__iexact=target).first()
+            if ct is None:
+                # Unknown target → empty result set, not a server error.
+                return qs.none()
+            qs = qs.filter(content_type=ct)
+
         if object_id:
             qs = qs.filter(object_id=object_id)
         return qs
+
+    def perform_create(self, serializer: BaseSerializer) -> None:
+        # Author is injected from the request — never trusted from input.
+        serializer.save(author=self.request.user)
