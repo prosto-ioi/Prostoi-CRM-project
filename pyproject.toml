@@ -1,0 +1,44 @@
+# Ruff + tool configuration for the project.
+# Run:
+#   ruff check apps/ settings/
+#   ruff format apps/ settings/
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = [
+    "*/migrations/*",
+    "manage.py",
+]
+
+[tool.ruff.lint]
+# A reasonable Django-friendly rule set.
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort (import ordering)
+    "B",    # bugbear
+    "UP",   # pyupgrade
+    "SIM",  # flake8-simplify
+    "C4",   # flake8-comprehensions
+    "DJ",   # flake8-django
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E501",   # line too long — handled by formatter
+    "B008",   # function call in default argument — DRF idiom
+    "RUF012", # mutable class attributes — common in Django ``Meta``
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["users", "crm", "settings"]
+combine-as-imports = true
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests.py" = ["S101", "DJ007"]
+"**/migrations/*" = ["ALL"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
