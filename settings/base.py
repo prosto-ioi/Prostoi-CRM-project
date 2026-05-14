@@ -175,3 +175,9 @@ CACHES = {
         "TIMEOUT": 300,
     }
 }
+
+# How many requests per window are allowed for each endpoint.
+RATE_LIMIT_REGISTER_MAX: int = 5    # POST /api/auth/register/
+RATE_LIMIT_TOKEN_MAX: int = 10
+RATE_LIMIT_DEALS_MAX: int = 20
+RATE_LIMIT_WINDOW: int = 60
