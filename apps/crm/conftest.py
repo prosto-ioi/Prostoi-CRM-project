@@ -5,16 +5,21 @@ Keeps the per-class test files lean by centralising:
 * Common constants (URL names, default passwords, default factory payloads).
 * Helpers that compose them — ``reverse_list`` / ``reverse_detail`` /
   ``authenticate``.
+* A typed :class:`TestAPIClient` protocol that fixes a long-standing gap in
+  ``djangorestframework-stubs`` (the inherited ``Client.post/get/...`` typing
+  bleeds through and Pylance sees the return type as ``WSGIRequest`` instead
+  of ``rest_framework.response.Response``).
 
 Nothing in this module depends on a specific test class; the goal is that
 test files only describe *behaviour*, not boilerplate.
 """
 from __future__ import annotations
 
-from typing import Any, Final
+from typing import Any, Final, Protocol
 
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from rest_framework.response import Response
 from rest_framework.test import APIClient
 
 User = get_user_model()
@@ -37,6 +42,62 @@ BASENAME_PRODUCT: Final[str] = "product"
 BASENAME_DEAL: Final[str] = "deal"
 BASENAME_TASK: Final[str] = "task"
 BASENAME_COMMENT: Final[str] = "comment"
+
+
+# ─── Typed DRF client protocol ─────────────────────────────────────────────
+class TestAPIClient(Protocol):
+    """Structural type for DRF's :class:`APIClient` used in tests.
+
+    Why this exists
+        At runtime ``APIClient.post(...)`` returns a DRF
+        :class:`rest_framework.response.Response`, but the static stubs for
+        ``djangorestframework-stubs`` inherit the type from Django's
+        :class:`django.test.Client`, which is typed as returning a
+        ``_MonkeyPatchedWSGIResponse``. Pylance then resolves that to
+        ``WSGIRequest | Unknown`` and complains everywhere a test reads
+        ``response.data``.
+
+    The fix
+        We declare a small :class:`Protocol` listing only the methods we
+        actually call in tests, each returning ``Response`` explicitly, and
+        :func:`make_api_client` returns one of these. Tests then read
+        ``response.data`` without any type errors and never need ``cast``
+        sprinkled around. Runtime behaviour is unchanged — ``Protocol`` is
+        purely a type-checker construct.
+    """
+
+    def get(self, path: str, data: Any = ..., **kwargs: Any) -> Response: ...
+
+    def post(
+        self, path: str, data: Any = ..., format: str = ..., **kwargs: Any,
+    ) -> Response: ...
+
+    def put(
+        self, path: str, data: Any = ..., format: str = ..., **kwargs: Any,
+    ) -> Response: ...
+
+    def patch(
+        self, path: str, data: Any = ..., format: str = ..., **kwargs: Any,
+    ) -> Response: ...
+
+    def delete(self, path: str, **kwargs: Any) -> Response: ...
+
+    def force_authenticate(self, user: Any | None = ..., token: Any = ...) -> None: ...
+
+    def credentials(self, **kwargs: Any) -> None: ...
+
+
+def make_api_client() -> TestAPIClient:
+    """Return a DRF ``APIClient`` typed as :class:`TestAPIClient`.
+
+    At runtime this is exactly :class:`rest_framework.test.APIClient`; the
+    return-type annotation gives Pylance the correct ``Response`` shape for
+    every HTTP method.
+    """
+    # ``APIClient`` structurally satisfies ``TestAPIClient`` — the protocol
+    # methods are all real methods on the class. Pyright accepts the
+    # assignment without an explicit cast.
+    return APIClient()  # type: ignore[return-value]
 
 
 # ─── Test fixtures: URL helpers ────────────────────────────────────────────
@@ -93,6 +154,6 @@ def make_user(
     return user
 
 
-def authenticate(client: APIClient, user: Any) -> None:
+def authenticate(client: TestAPIClient, user: Any) -> None:
     """Force-authenticate ``client`` as ``user`` (bypasses JWT for speed)."""
     client.force_authenticate(user=user)
