@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from django.contrib.auth.password_validation import validate_password
+from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import Token
@@ -110,7 +111,7 @@ class UserWriteSerializer(serializers.ModelSerializer):
         """
         if attrs.get("password") != attrs.get("password2"):
             raise serializers.ValidationError(  # type: ignore
-                {"password2": "Passwords do not match."},
+                {"password2": _("Passwords do not match.")},
             )
         return attrs
 
@@ -121,6 +122,52 @@ class UserWriteSerializer(serializers.ModelSerializer):
         # Pop the raw password so we can pass it positionally to ``create_user``.
         password: str = validated_data.pop("password")
         return User.objects.create_user(password=password, **validated_data)
+
+    def to_representation(self, instance: User) -> dict[str, Any]:
+        """Always return the safe read shape on response."""
+        return UserReadSerializer(instance, context=self.context).data
+
+
+class UserMeSerializer(serializers.ModelSerializer):
+    """Profile read/write serializer for ``GET/PATCH /api/auth/me/``.
+
+    Mutable fields: ``first_name``, ``last_name``, ``language``, ``timezone``,
+    ``avatar``. ``email`` is intentionally read-only — changing it would
+    require re-verification, which is out of scope for this endpoint.
+    Password changes go through a separate flow (not implemented yet).
+
+    On response we delegate to :class:`UserReadSerializer` for the exact same
+    shape the registration endpoint emits, so frontends can use one schema.
+    """
+
+    class Meta:
+        model = User
+        fields = (
+            "id",
+            "email",
+            "first_name",
+            "last_name",
+            "language",
+            "timezone",
+            "avatar",
+            "date_joined",
+        )
+        # ``id``, ``email``, ``date_joined`` are immutable here.
+        read_only_fields = ("id", "email", "date_joined")
+
+    def validate_timezone(self, value: str) -> str:
+        """Reject typos early — invalid IANA names would otherwise blow up at
+        ``ZoneInfo(...)`` deep inside the middleware on the next request."""
+        # Local import — ``zoneinfo`` is stdlib but only needed here.
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError as exc:
+            raise serializers.ValidationError(  # type: ignore
+                _("Unknown timezone: %(name)s.") % {"name": value},
+            ) from exc
+        return value
 
     def to_representation(self, instance: User) -> dict[str, Any]:
         """Always return the safe read shape on response."""
