@@ -282,8 +282,7 @@ class UserModelTests(TestCase):
         )
         self.assertEqual(user.get_full_name(), "First Last")
         self.assertEqual(user.get_short_name(), "First")
-
-
+        
 # ══════════════════════════════════════════════════════════════════════════
 #  GET / PATCH /api/auth/me/
 # ══════════════════════════════════════════════════════════════════════════

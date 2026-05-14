@@ -51,6 +51,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "corsheaders.middleware.CorsMiddleware",
+    "apps.crm.middleware.RateLimitMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -204,8 +205,26 @@ SPECTACULAR_SETTINGS = {
     "SERVE_INCLUDE_SCHEMA": False,
 }
 
+REDIS_URL: str = os.getenv("CRM_REDIS_URL", "redis://127.0.0.1:6379/0")
 
-# ─── Logging ────────────────────────────────────────────────────────────────
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": REDIS_URL,
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        },
+        "TIMEOUT": 300,
+    }
+}
+
+# How many requests per window are allowed for each endpoint.
+RATE_LIMIT_REGISTER_MAX: int = 5    # POST /api/auth/register/
+RATE_LIMIT_TOKEN_MAX: int = 10
+RATE_LIMIT_DEALS_MAX: int = 20
+RATE_LIMIT_WINDOW: int = 60
+  
+# Logging 
 # Single config that covers both local dev and prod. ``CRM_LOG_LEVEL`` may be
 # set in ``.env`` to bump verbosity (``DEBUG`` for noisy local work,
 # ``WARNING`` for prod).
