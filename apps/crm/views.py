@@ -10,6 +10,7 @@ restricted to the row's owner (or staff).
 from __future__ import annotations
 
 from typing import ClassVar, cast
+from .pubsub import publish_deal_event
 
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import QuerySet
@@ -236,16 +237,20 @@ class DealViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
         return response
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        deal = serializer.save(created_by=self.request.user)
         invalidate_deals_cache()
+        publish_deal_event("deal_created", deal.id)
 
     def perform_update(self, serializer):
-        serializer.save()
+        deal = serializer.save()
         invalidate_deals_cache()
+        publish_deal_event("deal_updated", deal.id)
 
     def perform_destroy(self, instance):
+        deal_id = instance.id
         instance.delete()
         invalidate_deals_cache()
+        publish_deal_event("deal_deleted", deal_id)
 
 # Task 
 @extend_schema_view(
