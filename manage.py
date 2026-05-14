@@ -1,3 +1,8 @@
+"""Django command-line utility entry point.
+
+Loads environment variables from ``settings/.env`` so the default
+``DJANGO_SETTINGS_MODULE`` (``settings.env.<CRM_ENV_ID>``) is resolvable.
+"""
 from __future__ import annotations
 
 import os

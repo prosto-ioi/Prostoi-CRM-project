@@ -27,7 +27,6 @@ from django.contrib.contenttypes.models import ContentType
 from django.test import TestCase
 from rest_framework import status
 from rest_framework.response import Response
-from rest_framework.test import APIClient
 
 from crm.models import Category, Client, Comment, Deal, Product, Tag, Task
 
@@ -39,7 +38,9 @@ from .conftest import (
     BASENAME_PRODUCT,
     BASENAME_TAG,
     BASENAME_TASK,
+    TestAPIClient,
     authenticate,
+    make_api_client,
     make_user,
     reverse_detail,
     reverse_list,
@@ -88,19 +89,19 @@ class _CrmAPITestCase(TestCase):
 
     def setUp(self) -> None:
         # Per-test client — force_authenticate state must not leak across tests.
-        self.api: APIClient = APIClient()
+        self.api: TestAPIClient = make_api_client()
         authenticate(self.api, self.user)
 
     # ─── tiny helpers used across the suite ────────────────────────────────
-    def as_user(self, user: Any) -> APIClient:
-        """Return a fresh ``APIClient`` authenticated as ``user``."""
-        client = APIClient()
+    def as_user(self, user: Any) -> TestAPIClient:
+        """Return a fresh client authenticated as ``user``."""
+        client = make_api_client()
         authenticate(client, user)
         return client
 
-    def as_anonymous(self) -> APIClient:
-        """Return a fresh ``APIClient`` with no credentials."""
-        return APIClient()
+    def as_anonymous(self) -> TestAPIClient:
+        """Return a fresh client with no credentials."""
+        return make_api_client()
 
     @staticmethod
     def assert_status(response: Response, expected: int) -> None:
