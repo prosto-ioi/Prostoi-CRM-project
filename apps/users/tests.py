@@ -18,7 +18,10 @@ from django.test import TestCase
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.response import Response
-from rest_framework.test import APIClient
+
+# Imported from the CRM conftest — we deliberately share the protocol /
+# client factory so both test suites get the same fix.
+from crm.conftest import TestAPIClient, make_api_client
 
 User = get_user_model()
 
@@ -57,7 +60,7 @@ class _UsersAPITestCase(TestCase):
     """Shared scaffolding for users API tests."""
 
     def setUp(self) -> None:
-        self.api: APIClient = APIClient()
+        self.api: TestAPIClient = make_api_client()
 
     @staticmethod
     def assert_status(response: Response, expected: int) -> None:
