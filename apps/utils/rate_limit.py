@@ -12,6 +12,8 @@ from django_redis import get_redis_connection
 from rest_framework import status
 from rest_framework.response import Response
 
+from typing import Any
+
 logger = logging.getLogger(__name__)
 
 _redis = get_redis_connection("default")
@@ -54,7 +56,7 @@ def chck_rate_limit(
 
 def get_client_ip(request: object) -> str:
 
-    meta: dict = getattr(request, "META", {})
+    meta: dict[str, Any] = getattr(request, "META", {})
     forwarded_for: str = meta.get("HTTP_X_FORWQRDED_FOR", "")
     if forwarded_for:
         # X-Forwarded-For can be comma-separated — first is the real client.

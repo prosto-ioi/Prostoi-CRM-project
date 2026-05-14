@@ -23,6 +23,11 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.serializers import BaseSerializer
 
+from .cache import (
+    get_deals_list_cache,
+    invalidate_deals_cache,
+    set_deals_list_cache,
+)
 from .filters import DealFilter, ProductFilter, TaskFilter
 from .models import Category, Client, Comment, Deal, Product, Tag, Task
 from .permissions import IsAdminOrReadOnly, IsOwnerOrReadOnly
@@ -76,7 +81,7 @@ class ReadWriteSerializerMixin:
         return self.read_serializer_class
 
 
-# ──────────────────────────────── Category ────────────────────────────────
+# Category 
 @extend_schema_view(
     list=extend_schema(summary="List categories", tags=["Categories"]),
     retrieve=extend_schema(summary="Retrieve category", tags=["Categories"]),
@@ -95,7 +100,7 @@ class CategoryViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     write_serializer_class = CategoryWriteSerializer
 
 
-# ──────────────────────────────── Tag ────────────────────────────────
+# Tag 
 @extend_schema_view(
     list=extend_schema(summary="List tags", tags=["Tags"]),
     retrieve=extend_schema(summary="Retrieve tag", tags=["Tags"]),
@@ -104,7 +109,7 @@ class CategoryViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     partial_update=extend_schema(summary="Patch tag (staff only)", tags=["Tags"]),
     destroy=extend_schema(summary="Delete tag (staff only)", tags=["Tags"]),
 )
-class TagViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
+class TagViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet): 
     """Public to read; staff-only to write."""
 
     queryset = Tag.objects.all()
@@ -114,7 +119,7 @@ class TagViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     write_serializer_class = TagWriteSerializer
 
 
-# ──────────────────────────────── Client ────────────────────────────────
+# Client 
 @extend_schema_view(
     list=extend_schema(summary="List clients", tags=["Clients"]),
     retrieve=extend_schema(summary="Retrieve client", tags=["Clients"]),
@@ -132,7 +137,7 @@ class ClientViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     write_serializer_class = ClientWriteSerializer
 
 
-# ──────────────────────────────── Product ────────────────────────────────
+# Product 
 @extend_schema_view(
     list=extend_schema(
         summary="List products",
@@ -183,7 +188,7 @@ class ProductViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
         serializer.save(created_by=self.request.user)
 
 
-# ──────────────────────────────── Deal ────────────────────────────────
+# Deal 
 @extend_schema_view(
     list=extend_schema(
         summary="List deals",
@@ -221,11 +226,28 @@ class DealViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
             return [IsOwnerOrReadOnly()]
         return [IsAuthenticated()]
 
-    def perform_create(self, serializer: BaseSerializer) -> None:
+    def list(self, request, *args, **kwargs):
+        cached = get_deals_list_cache()
+        if cached is not None:
+            return Response(cached)
+        
+        response = super().list(request, *args, **kwargs)
+        set_deals_list_cache(response.data)
+        return response
+
+    def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
+        invalidate_deals_cache()
 
+    def perform_update(self, serializer):
+        serializer.save()
+        invalidate_deals_cache()
 
-# ──────────────────────────────── Task ────────────────────────────────
+    def perform_destroy(self, instance):
+        instance.delete()
+        invalidate_deals_cache()
+
+# Task 
 @extend_schema_view(
     list=extend_schema(
         summary="List tasks",
@@ -285,15 +307,15 @@ class TaskViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
             data = CommentReadSerializer(qs, many=True, context={"request": request}).data
             return Response(data, status=status.HTTP_200_OK)
 
-        # POST — server fills in content_type/object_id from URL context, so
-        # the client only needs to send ``body``. We inject them BEFORE
-        # validation rather than passing them via save() — otherwise the
-        # serializer's "this field is required" check fires first.
-        #
-        # ``request.data`` is either a plain ``dict`` (JSON body) or a Django
-        # ``QueryDict`` (form-data). Both expose ``.copy()`` and accept
-        # subscript assignment, so this works uniformly — using ``{**...}``
-        # instead would unpack QueryDict values as one-element lists.
+        """POST — server fills in content_type/object_id from URL context, so
+        the client only needs to send ``body``. We inject them BEFORE
+        validation rather than passing them via save() — otherwise the
+        serializer's "this field is required" check fires first.
+        ``request.data`` is either a plain ``dict`` (JSON body) or a Django
+        ``QueryDict`` (form-data). Both expose ``.copy()`` and accept
+        subscript assignment, so this works uniformly — using ``{**...}``
+        instead would unpack QueryDict values as one-element lists.'"""
+
         payload = request.data.copy()
         payload["content_type"] = "task"
         payload["object_id"] = task.id
@@ -304,7 +326,7 @@ class TaskViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
         return Response(writer.data, status=status.HTTP_201_CREATED)
 
 
-# ──────────────────────────────── Comment ────────────────────────────────
+# Comment 
 @extend_schema_view(
     list=extend_schema(
         summary="List comments",
