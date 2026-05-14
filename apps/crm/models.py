@@ -16,19 +16,20 @@ from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelatio
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
 from django.utils.text import slugify
+from django.utils.translation import gettext_lazy as _
 
 
 class Category(models.Model):
     """Product category with multilingual names (EN/RU/KK)."""
 
-    name_en = models.CharField("name (EN)", max_length=100)
-    name_ru = models.CharField("name (RU)", max_length=100, blank=True, default="")
-    name_kk = models.CharField("name (KK)", max_length=100, blank=True, default="")
+    name_en = models.CharField(_("name (EN)"), max_length=100)
+    name_ru = models.CharField(_("name (RU)"), max_length=100, blank=True, default="")
+    name_kk = models.CharField(_("name (KK)"), max_length=100, blank=True, default="")
     slug = models.SlugField(unique=True)
 
     class Meta:
-        verbose_name = "category"
-        verbose_name_plural = "categories"
+        verbose_name = _("category")
+        verbose_name_plural = _("categories")
         ordering = ["name_en"]
 
     def __str__(self) -> str:
@@ -53,12 +54,12 @@ class Category(models.Model):
 class Tag(models.Model):
     """Simple keyword tag, attachable to products."""
 
-    name = models.CharField("name", max_length=50, unique=True)
+    name = models.CharField(_("name"), max_length=50, unique=True)
     slug = models.SlugField(unique=True)
 
     class Meta:
-        verbose_name = "tag"
-        verbose_name_plural = "tags"
+        verbose_name = _("tag")
+        verbose_name_plural = _("tags")
         ordering = ["name"]
 
     def __str__(self) -> str:
@@ -74,17 +75,17 @@ class Tag(models.Model):
 class Client(models.Model):
     """External CRM client — the people we sell to."""
 
-    first_name = models.CharField("first name", max_length=50)
-    last_name = models.CharField("last name", max_length=50)
-    email = models.EmailField("email", unique=True)
-    phone = models.CharField("phone", max_length=20, blank=True, default="")
-    address = models.CharField("address", max_length=100, blank=True, default="")
-    created_at = models.DateTimeField("created at", auto_now_add=True, db_index=True)
-    updated_at = models.DateTimeField("updated at", auto_now=True)
+    first_name = models.CharField(_("first name"), max_length=50)
+    last_name = models.CharField(_("last name"), max_length=50)
+    email = models.EmailField(_("email"), unique=True)
+    phone = models.CharField(_("phone"), max_length=20, blank=True, default="")
+    address = models.CharField(_("address"), max_length=100, blank=True, default="")
+    created_at = models.DateTimeField(_("created at"), auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(_("updated at"), auto_now=True)
 
     class Meta:
-        verbose_name = "client"
-        verbose_name_plural = "clients"
+        verbose_name = _("client")
+        verbose_name_plural = _("clients")
         ordering = ["created_at"]
 
     def __str__(self) -> str:
@@ -94,7 +95,7 @@ class Client(models.Model):
 class Product(models.Model):
     """A sellable product or service."""
 
-    name = models.CharField("name", max_length=200)
+    name = models.CharField(_("name"), max_length=200)
     slug = models.SlugField(unique=True)
     category = models.ForeignKey(
         Category,
@@ -102,36 +103,36 @@ class Product(models.Model):
         blank=True,
         null=True,
         related_name="products",
-        verbose_name="category",
+        verbose_name=_("category"),
     )
     tags = models.ManyToManyField(
         Tag,
         blank=True,
         related_name="products",
-        verbose_name="tags",
+        verbose_name=_("tags"),
     )
     price = models.DecimalField(
-        "price",
+        _("price"),
         max_digits=10,
         decimal_places=2,
         db_index=True,
     )
-    description = models.TextField("description", blank=True, default="")
-    in_stock = models.BooleanField("in stock", default=True, db_index=True)
-    created_at = models.DateTimeField("created at", auto_now_add=True, db_index=True)
-    updated_at = models.DateTimeField("updated at", auto_now=True)
+    description = models.TextField(_("description"), blank=True, default="")
+    in_stock = models.BooleanField(_("in stock"), default=True, db_index=True)
+    created_at = models.DateTimeField(_("created at"), auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(_("updated at"), auto_now=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="created_products",
-        verbose_name="created by",
+        verbose_name=_("created by"),
     )
 
     class Meta:
-        verbose_name = "product"
-        verbose_name_plural = "products"
+        verbose_name = _("product")
+        verbose_name_plural = _("products")
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
@@ -150,16 +151,16 @@ class Deal(models.Model):
     class Status(models.TextChoices):
         """Lifecycle status of a deal."""
 
-        NEW = "new", "New"
-        IN_PROGRESS = "in_progress", "In progress"
-        CLOSED_WON = "closed_won", "Closed (won)"
-        CLOSED_LOST = "closed_lost", "Closed (lost)"
+        NEW = "new", _("New")
+        IN_PROGRESS = "in_progress", _("In progress")
+        CLOSED_WON = "closed_won", _("Closed (won)")
+        CLOSED_LOST = "closed_lost", _("Closed (lost)")
 
     client = models.ForeignKey(
         Client,
         on_delete=models.CASCADE,
         related_name="deals",
-        verbose_name="client",
+        verbose_name=_("client"),
     )
     product = models.ForeignKey(
         Product,
@@ -167,37 +168,37 @@ class Deal(models.Model):
         null=True,
         blank=True,
         related_name="deals",
-        verbose_name="product",
+        verbose_name=_("product"),
     )
-    title = models.CharField("title", max_length=200)
+    title = models.CharField(_("title"), max_length=200)
     amount = models.DecimalField(
-        "amount",
+        _("amount"),
         max_digits=10,
         decimal_places=2,
         db_index=True,
     )
     status = models.CharField(
-        "status",
+        _("status"),
         max_length=20,
         choices=Status.choices,
         default=Status.NEW,
         db_index=True,
     )
-    created_at = models.DateTimeField("created at", auto_now_add=True, db_index=True)
-    updated_at = models.DateTimeField("updated at", auto_now=True)
-    closed_at = models.DateTimeField("closed at", blank=True, null=True)
+    created_at = models.DateTimeField(_("created at"), auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(_("updated at"), auto_now=True)
+    closed_at = models.DateTimeField(_("closed at"), blank=True, null=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="created_deals",
-        verbose_name="created by",
+        verbose_name=_("created by"),
     )
 
     class Meta:
-        verbose_name = "deal"
-        verbose_name_plural = "deals"
+        verbose_name = _("deal")
+        verbose_name_plural = _("deals")
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
@@ -210,17 +211,17 @@ class Task(models.Model):
     class Status(models.TextChoices):
         """Lifecycle status of a task."""
 
-        PENDING = "pending", "Pending"
-        IN_PROGRESS = "in_progress", "In progress"
-        COMPLETED = "completed", "Completed"
+        PENDING = "pending", _("Pending")
+        IN_PROGRESS = "in_progress", _("In progress")
+        COMPLETED = "completed", _("Completed")
 
-    title = models.CharField("title", max_length=200)
-    description = models.TextField("description", blank=True, default="")
+    title = models.CharField(_("title"), max_length=200)
+    description = models.TextField(_("description"), blank=True, default="")
     assigned_to = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="tasks",
-        verbose_name="assigned to",
+        verbose_name=_("assigned to"),
     )
     client = models.ForeignKey(
         Client,
@@ -228,7 +229,7 @@ class Task(models.Model):
         null=True,
         blank=True,
         related_name="tasks",
-        verbose_name="client",
+        verbose_name=_("client"),
     )
     deal = models.ForeignKey(
         Deal,
@@ -236,25 +237,25 @@ class Task(models.Model):
         null=True,
         blank=True,
         related_name="tasks",
-        verbose_name="deal",
+        verbose_name=_("deal"),
     )
     status = models.CharField(
-        "status",
+        _("status"),
         max_length=20,
         choices=Status.choices,
         default=Status.PENDING,
         db_index=True,
     )
-    due_date = models.DateTimeField("due date", blank=True, null=True, db_index=True)
-    created_at = models.DateTimeField("created at", auto_now_add=True, db_index=True)
-    updated_at = models.DateTimeField("updated at", auto_now=True)
+    due_date = models.DateTimeField(_("due date"), blank=True, null=True, db_index=True)
+    created_at = models.DateTimeField(_("created at"), auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(_("updated at"), auto_now=True)
 
     # Reverse generic accessor: ``task.comments.all()``.
     comments = GenericRelation("Comment", related_query_name="task")
 
     class Meta:
-        verbose_name = "task"
-        verbose_name_plural = "tasks"
+        verbose_name = _("task")
+        verbose_name_plural = _("tasks")
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
@@ -268,21 +269,21 @@ class Comment(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="comments",
-        verbose_name="author",
+        verbose_name=_("author"),
     )
     content_type = models.ForeignKey(
         ContentType,
         on_delete=models.CASCADE,
-        verbose_name="content type",
+        verbose_name=_("content type"),
     )
-    object_id = models.PositiveIntegerField("object id")
+    object_id = models.PositiveIntegerField(_("object id"))
     content_object = GenericForeignKey("content_type", "object_id")
-    body = models.TextField("body")
-    created_at = models.DateTimeField("created at", auto_now_add=True, db_index=True)
+    body = models.TextField(_("body"))
+    created_at = models.DateTimeField(_("created at"), auto_now_add=True, db_index=True)
 
     class Meta:
-        verbose_name = "comment"
-        verbose_name_plural = "comments"
+        verbose_name = _("comment")
+        verbose_name_plural = _("comments")
         ordering = ["-created_at"]
         # Composite index — every list query filters on these two columns.
         indexes = [models.Index(fields=["content_type", "object_id"])]
