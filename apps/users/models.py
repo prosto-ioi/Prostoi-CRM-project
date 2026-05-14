@@ -14,6 +14,7 @@ from django.contrib.auth.models import (
     PermissionsMixin,
 )
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 
 class UserManager(BaseUserManager["User"]):
@@ -98,28 +99,28 @@ class User(AbstractBaseUser, PermissionsMixin):
     class Language(models.TextChoices):
         """Supported interface languages."""
 
-        EN = "en", "English"
-        RU = "ru", "Russian"
-        KK = "kk", "Kazakh"
+        EN = "en", _("English")
+        RU = "ru", _("Russian")
+        KK = "kk", _("Kazakh")
 
-    email = models.EmailField("email address", unique=True)
-    first_name = models.CharField("first name", max_length=50)
-    last_name = models.CharField("last name", max_length=50)
+    email = models.EmailField(_("email address"), unique=True)
+    first_name = models.CharField(_("first name"), max_length=50)
+    last_name = models.CharField(_("last name"), max_length=50)
 
-    is_active = models.BooleanField("active", default=True)
-    is_staff = models.BooleanField("staff status", default=False)
+    is_active = models.BooleanField(_("active"), default=True)
+    is_staff = models.BooleanField(_("staff status"), default=False)
     # auto_now_add — set at INSERT, then immutable. Replaces the mutable default.
-    date_joined = models.DateTimeField("date joined", auto_now_add=True)
+    date_joined = models.DateTimeField(_("date joined"), auto_now_add=True)
 
-    avatar = models.ImageField("avatar", upload_to="avatars/", null=True, blank=True)
+    avatar = models.ImageField(_("avatar"), upload_to="avatars/", null=True, blank=True)
 
     language = models.CharField(
-        "language",
+        _("language"),
         max_length=2,
         choices=Language.choices,
         default=Language.EN,
     )
-    timezone = models.CharField("timezone", max_length=50, default="UTC")
+    timezone = models.CharField(_("timezone"), max_length=50, default="UTC")
 
     # Explicit annotation lets Pylance type ``User.objects`` as ``UserManager``
     # rather than the default unbound manager.
@@ -130,8 +131,8 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     class Meta:
         app_label = "users"
-        verbose_name = "user"
-        verbose_name_plural = "users"
+        verbose_name = _("user")
+        verbose_name_plural = _("users")
         ordering = ["-date_joined"]
 
     def __str__(self) -> str:
