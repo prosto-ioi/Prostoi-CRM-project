@@ -283,8 +283,8 @@ class ProductAPITests(_CrmAPITestCase):
         """Return a fresh product payload with sensible defaults."""
         payload: dict[str, Any] = {
             "name": "CRM License",
-            "category": self.category.id,
-            "tags": [self.tag.id],
+            "category": self.category.pk,
+            "tags": [self.tag.pk],
             "price": str(self.DEFAULT_PRICE),
             "description": "Annual CRM Pro license",
         }
@@ -386,7 +386,7 @@ class DealAPITests(_CrmAPITestCase):
 
     def _build_payload(self, **overrides: Any) -> dict[str, Any]:
         payload: dict[str, Any] = {
-            "client": self.crm_client.id,
+            "client": self.crm_client.pk,
             "title": "Initial sale",
             "amount": str(self.DEFAULT_AMOUNT),
             "status": Deal.Status.NEW,
@@ -505,7 +505,7 @@ class TaskAPITests(_CrmAPITestCase):
     def test_assignee_can_complete_task(self) -> None:
         task = Task.objects.create(title="T", assigned_to=self.user)
         response = self.api.patch(
-            reverse_detail(BASENAME_TASK, task.id),
+            reverse_detail(BASENAME_TASK, task.pk),
             {"status": Task.Status.COMPLETED},
         )
         self.assert_status(response, status.HTTP_200_OK)
@@ -514,7 +514,7 @@ class TaskAPITests(_CrmAPITestCase):
     def test_non_assignee_cannot_update(self) -> None:
         task = Task.objects.create(title="T", assigned_to=self.user)
         response = self.as_user(self.other_user).patch(
-            reverse_detail(BASENAME_TASK, task.id),
+            reverse_detail(BASENAME_TASK, task.pk),
             {"status": Task.Status.COMPLETED},
         )
         self.assert_status(response, status.HTTP_403_FORBIDDEN)
@@ -563,7 +563,7 @@ class CommentAPITests(_CrmAPITestCase):
     def test_create_comment_on_deal(self) -> None:
         response = self.api.post(self.LIST_URL, {
             "content_type": "deal",
-            "object_id": self.deal.id,
+            "object_id": self.deal.pk,
             "body": "Sent the proposal",
         })
         self.assert_status(response, status.HTTP_201_CREATED)
@@ -575,7 +575,7 @@ class CommentAPITests(_CrmAPITestCase):
     def test_create_comment_on_task(self) -> None:
         response = self.api.post(self.LIST_URL, {
             "content_type": "task",
-            "object_id": self.task.id,
+            "object_id": self.task.pk,
             "body": "Working on it",
         })
         self.assert_status(response, status.HTTP_201_CREATED)
@@ -597,11 +597,11 @@ class CommentAPITests(_CrmAPITestCase):
         ct_task = ContentType.objects.get_for_model(Task)
         Comment.objects.create(
             author=self.user, content_type=ct_deal,
-            object_id=self.deal.id, body="deal comment",
+            object_id=self.deal.pk, body="deal comment",
         )
         Comment.objects.create(
             author=self.user, content_type=ct_task,
-            object_id=self.task.id, body="task comment",
+            object_id=self.task.pk, body="task comment",
         )
 
         response = self.api.get(self.LIST_URL, {"target": "deal"})
@@ -615,7 +615,7 @@ class CommentAPITests(_CrmAPITestCase):
         Comment.objects.create(
             author=self.user,
             content_type=ContentType.objects.get_for_model(Deal),
-            object_id=self.deal.id,
+            object_id=self.deal.pk,
             body="x",
         )
         response = self.api.get(self.LIST_URL, {"target": "nonexistent"})
@@ -628,11 +628,11 @@ class CommentAPITests(_CrmAPITestCase):
         comment = Comment.objects.create(
             author=self.user,
             content_type=ContentType.objects.get_for_model(Deal),
-            object_id=self.deal.id,
+            object_id=self.deal.pk,
             body="mine",
         )
         response = self.as_user(self.other_user).delete(
-            reverse_detail(BASENAME_COMMENT, comment.id),
+            reverse_detail(BASENAME_COMMENT, comment.pk),
         )
         self.assert_status(response, status.HTTP_403_FORBIDDEN)
 
@@ -640,22 +640,22 @@ class CommentAPITests(_CrmAPITestCase):
         comment = Comment.objects.create(
             author=self.user,
             content_type=ContentType.objects.get_for_model(Deal),
-            object_id=self.deal.id,
+            object_id=self.deal.pk,
             body="mine",
         )
-        response = self.api.delete(reverse_detail(BASENAME_COMMENT, comment.id))
+        response = self.api.delete(reverse_detail(BASENAME_COMMENT, comment.pk))
         self.assert_status(response, status.HTTP_204_NO_CONTENT)
-        self.assertFalse(Comment.objects.filter(pk=comment.id).exists())
+        self.assertFalse(Comment.objects.filter(pk=comment.pk).exists())
 
     def test_staff_can_delete_any_comment(self) -> None:
         comment = Comment.objects.create(
             author=self.user,
             content_type=ContentType.objects.get_for_model(Deal),
-            object_id=self.deal.id,
+            object_id=self.deal.pk,
             body="someone else's",
         )
         response = self.as_user(self.staff).delete(
-            reverse_detail(BASENAME_COMMENT, comment.id),
+            reverse_detail(BASENAME_COMMENT, comment.pk),
         )
         self.assert_status(response, status.HTTP_204_NO_CONTENT)
 
@@ -676,7 +676,7 @@ class TaskCommentsActionTests(_CrmAPITestCase):
     def _url(self) -> str:
         """Reverse the nested router URL for ``task-comments``."""
         from django.urls import reverse
-        return reverse("task-comments", kwargs={"pk": self.task.id})
+        return reverse("task-comments", kwargs={"pk": self.task.pk})
 
     def test_post_creates_comment_attached_to_task(self) -> None:
         response = self.api.post(self._url(), {"body": "first note"})
@@ -688,7 +688,7 @@ class TaskCommentsActionTests(_CrmAPITestCase):
         self.assertTrue(
             Comment.objects.filter(
                 content_type=ct_task,
-                object_id=self.task.id,
+                object_id=self.task.pk,
                 body="first note",
             ).exists(),
         )
@@ -697,13 +697,13 @@ class TaskCommentsActionTests(_CrmAPITestCase):
         ct_task = ContentType.objects.get_for_model(Task)
         Comment.objects.create(
             author=self.user, content_type=ct_task,
-            object_id=self.task.id, body="hers",
+            object_id=self.task.pk, body="hers",
         )
         # An unrelated task with its own comment — must not appear in the list.
         other = Task.objects.create(title="Other", assigned_to=self.user)
         Comment.objects.create(
             author=self.user, content_type=ct_task,
-            object_id=other.id, body="theirs",
+            object_id=other.pk, body="theirs",
         )
 
         response = self.api.get(self._url())

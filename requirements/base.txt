@@ -8,3 +8,4 @@ Pillow
 python-dotenv
 django-stubs
 djangorestframework-stubs
+django-redis
