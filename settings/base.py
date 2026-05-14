@@ -56,6 +56,12 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # ``UserPreferencesMiddleware`` reads ``request.user`` to pick a language
+    # + timezone, so it MUST follow ``AuthenticationMiddleware``. It also
+    # replaces Django's stock ``LocaleMiddleware`` — we don't include that
+    # one because our middleware already handles ``Accept-Language`` for
+    # anonymous requests via ``get_language_from_request``.
+    "users.middleware.UserPreferencesMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -100,7 +106,27 @@ AUTH_PASSWORD_VALIDATORS = [
 
 
 # ─── i18n / TZ ──────────────────────────────────────────────────────────────
-LANGUAGE_CODE = "en-us"
+# Default language used when neither ``user.language`` nor the request's
+# ``Accept-Language`` header points at a supported locale.
+LANGUAGE_CODE = "en"
+
+# Explicit allowlist of locales the project ships translations for. Anything
+# outside this set is silently ignored by ``UserPreferencesMiddleware``.
+# Wrap the human-readable name in ``gettext_lazy`` so the label itself shows
+# up in the language menu translated.
+from django.utils.translation import gettext_lazy as _  # noqa: E402
+
+LANGUAGES = [
+    ("en", _("English")),
+    ("ru", _("Russian")),
+    ("kk", _("Kazakh")),
+]
+
+# Where ``makemessages`` writes ``.po`` files and ``compilemessages`` reads
+# them. Project-level dir so translations are shared across apps rather than
+# scattered per-app.
+LOCALE_PATHS = [BASE_DIR / "locale"]
+
 TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True

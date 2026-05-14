@@ -19,6 +19,7 @@ from __future__ import annotations
 from typing import Any
 
 from django.contrib.contenttypes.models import ContentType
+from django.utils.translation import get_language
 from rest_framework import serializers
 from rest_framework.relations import PrimaryKeyRelatedField, SlugRelatedField
 
@@ -27,12 +28,36 @@ from .models import Category, Client, Comment, Deal, Product, Tag, Task
 
 # ─────────────────────────────── Category ────────────────────────────────
 class CategoryReadSerializer(serializers.ModelSerializer):
-    """Full category representation (incl. auto-generated ``slug``)."""
+    """Full category representation with a locale-aware ``name`` field.
+
+    The serializer exposes both:
+
+    * ``name`` — automatically picked based on the active language
+      (set by ``UserPreferencesMiddleware``). Falls back to ``name_en``
+      when the translation for the current locale is empty.
+    * ``name_en`` / ``name_ru`` / ``name_kk`` — the raw per-language
+      fields. Useful for admin UIs and editing forms.
+
+    Clients that only care about display can read ``name`` and ignore the
+    raw fields entirely.
+    """
+
+    name = serializers.SerializerMethodField()
 
     class Meta:
         model = Category
-        fields = ("id", "name_en", "name_ru", "name_kk", "slug")
+        fields = ("id", "name", "name_en", "name_ru", "name_kk", "slug")
         read_only_fields = fields
+
+    def get_name(self, obj: Category) -> str:
+        """Resolve the localised name using the currently active language.
+
+        ``get_language()`` reads the thread-local set by Django's translation
+        machinery; it returns whatever ``UserPreferencesMiddleware`` activated
+        for this request.
+        """
+        lang = (get_language() or "en").split("-")[0]
+        return obj.get_name(lang)
 
 
 class CategoryWriteSerializer(serializers.ModelSerializer):
