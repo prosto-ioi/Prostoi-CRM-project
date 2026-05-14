@@ -6,16 +6,18 @@ import logging
 from typing import Any
 
 from drf_spectacular.utils import OpenApiExample, extend_schema
-from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework import generics, status
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
+from .models import User
 from .serializers import (
     CustomTokenObtainPairSerializer,
+    UserMeSerializer,
     UserReadSerializer,
     UserWriteSerializer,
 )
@@ -147,3 +149,64 @@ class CustomTokenRefreshView(TokenRefreshView):
     )
     def post(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         return super().post(request, *args, **kwargs)
+
+
+class UserMeView(generics.RetrieveUpdateAPIView):
+    """Authenticated user profile — ``GET`` and ``PATCH``.
+
+    Note:
+        ``PUT`` is intentionally disabled (``http_method_names``). A full
+        replace makes no sense for a partial profile resource — clients should
+        send only the fields they want to change.
+
+    Permission model:
+        ``IsAuthenticated`` only — the queryset is implicitly scoped to
+        ``request.user``, so there is no risk of viewing/editing another
+        account.
+    """
+
+    serializer_class = UserMeSerializer
+    permission_classes = (IsAuthenticated,)
+    # No PUT — partial updates only.
+    http_method_names = ["get", "patch", "head", "options"]
+
+    def get_object(self) -> User:
+        """Always operate on the calling user — no PK lookup needed."""
+        # ``request.user`` is a ``User`` at runtime (we use a custom AUTH_USER_MODEL).
+        return self.request.user  # type: ignore[return-value]
+
+    @extend_schema(
+        summary="Get current user profile",
+        description="Returns the profile of the authenticated user.",
+        tags=["Auth"],
+        responses={
+            status.HTTP_200_OK: UserMeSerializer,
+            status.HTTP_401_UNAUTHORIZED: None,
+        },
+    )
+    def get(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        return super().get(request, *args, **kwargs)
+
+    @extend_schema(
+        summary="Update current user profile",
+        description=(
+            "Partial profile update. Mutable fields: first_name, last_name, "
+            "language, timezone, avatar. Email and date_joined are read-only."
+        ),
+        tags=["Auth"],
+        request=UserMeSerializer,
+        responses={
+            status.HTTP_200_OK: UserMeSerializer,
+            status.HTTP_400_BAD_REQUEST: None,
+            status.HTTP_401_UNAUTHORIZED: None,
+        },
+        examples=[
+            OpenApiExample(
+                "Change language to Russian and Almaty TZ",
+                value={"language": "ru", "timezone": "Asia/Almaty"},
+                request_only=True,
+            ),
+        ],
+    )
+    def patch(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        return super().patch(request, *args, **kwargs)
