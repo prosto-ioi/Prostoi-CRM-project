@@ -59,4 +59,21 @@ else
     ok "no .po files found, skipping compilemessages"
 fi
 
-# 6) 
+# 6) create superuser if not exists
+
+python manage.py shell <<'EOF'
+from django.contrib.auth import get_user_model
+User = get_user_model()
+if not User.objects.filter(email="admin@crm.com").exists():
+    User.objects.create_superuser(
+        email = "admin@crm.com",
+        first_name = "Admin",
+        last_name = "Admin",
+        password = "admin123",
+    )
+    print("Superuser created: admin@crm.com / admin123")
+else:
+    print("Superuser already exists, skipping.")
+EOF
+ok "Superuser check done."
+
