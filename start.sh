@@ -77,3 +77,14 @@ else:
 EOF
 ok "Superuser check done."
 
+# 7) populate database
+python manage.py fill_db
+ok "Database populated."
+
+# 8) THE END
+
+echo " API:     http://127.0.0.1:8000/api/ "
+echo " Swagger: http://127.0.0.1:8000/api/docs/"
+echo " ReDoc:   http://127.0.0.1:8000/api/redoc/"
+echo " Admin:   http://127.0.0.1:8000/admin/"
+echo " Start complete python"
