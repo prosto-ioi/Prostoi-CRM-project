@@ -42,3 +42,21 @@ pip install --upgrade pip
 pip install -r requirements/dev.txt
 
 ok "Dependencies installed from requirements/dev.txt."
+
+# 3) run migrations 
+python manage.py migrate
+ok "Migrations applied."
+
+# 4) collect ststic files 
+python manage.py collectstatic 
+ok "Static files collected."
+
+# 5) Compile messages (i18n)
+if find locale -name "*.po" 2>/dev/null | grep -q .; then
+    python manage.py compilemessages
+    ok "Messages compiled."
+else 
+    ok "no .po files found, skipping compilemessages"
+fi
+
+# 6) 
