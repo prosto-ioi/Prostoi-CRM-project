@@ -61,60 +61,84 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("\nDone."))
         self._print_summary()
 
-    # ─── Users ─────────────────────────────────────────────────────────────
+    #  Users 
     def _create_users(self) -> None:
         """Create three managers (different languages) and one staff admin."""
         users_data: list[dict[str, str]] = [
             {
-                "email": "manager1@crm.com", "first_name": "Alikhan",
-                "last_name": "Seitkali", "language": "ru", "timezone": "Asia/Almaty",
+                "email": "manager1@crm.com", 
+                "first_name": "Alikhan",
+                "last_name": "Seitkali", 
+                "language": "ru", 
+                "timezone": "Asia/Almaty",
             },
             {
-                "email": "manager2@crm.com", "first_name": "Aigerim",
-                "last_name": "Zhumabaeva", "language": "kk", "timezone": "Asia/Almaty",
+                "email": "manager2@crm.com",
+                  "first_name": "Aigerim",
+                "last_name": "Zhumabaeva", 
+                "language": "kk", 
+                "timezone": "Asia/Almaty",
             },
             {
-                "email": "manager3@crm.com", "first_name": "Ivan",
-                "last_name": "Petrov", "language": "en", "timezone": "UTC",
+                "email": "manager3@crm.com", 
+                "first_name": "Ivan",
+                "last_name": "Petrov", 
+                "language": "en", 
+                "timezone": "UTC",
             },
             {
-                "email": STAFF_EMAIL, "first_name": "Admin",
-                "last_name": "Staff", "language": "ru", "timezone": "Asia/Almaty",
+                "email": STAFF_EMAIL,
+                "first_name": "Admin",
+                "last_name": "Staff", 
+                "language": "ru", 
+                "timezone": "Asia/Almaty",
             },
         ]
         for data in users_data:
-            user, created = self.User.objects.get_or_create(  # type: ignore[attr-defined]
+            user, created = self.User.objects.get_or_create(  
                 email=data["email"],
                 defaults={**data, "is_active": True},
             )
             if created:
                 user.set_password(DEMO_PASSWORD)
-                if data["email"] == STAFF_EMAIL:
-                    user.is_staff = True
-                user.save()
-        user_count = self.User.objects.count()  # type: ignore[attr-defined]
-        self.stdout.write(f"  Users:      {user_count}")
+                user.save() 
+        self.stdout.write(f"  Users:      {self.User.objects.count()}")
 
-    # ─── Categories ────────────────────────────────────────────────────────
+    #  Categories 
     def _create_categories(self) -> None:
         """Seed 5 product categories with EN/RU/KK names."""
         categories: list[dict[str, str]] = [
-            {"name_en": "Software", "name_ru": "Программное обеспечение",
-             "name_kk": "Бағдарламалық жасақтама", "slug": "software"},
-            {"name_en": "Hardware", "name_ru": "Оборудование",
-             "name_kk": "Жабдық", "slug": "hardware"},
-            {"name_en": "Services", "name_ru": "Услуги",
-             "name_kk": "Қызметтер", "slug": "services"},
-            {"name_en": "Consulting", "name_ru": "Консалтинг",
-             "name_kk": "Консалтинг", "slug": "consulting"},
-            {"name_en": "Support", "name_ru": "Поддержка",
-             "name_kk": "Қолдау", "slug": "support"},
+            {"name_en": "Software", 
+             "name_ru": "Программное обеспечение",
+             "name_kk": "Бағдарламалық жасақтама", 
+             "slug": "software"
+             },
+            {"name_en": "Hardware", 
+             "name_ru": "Оборудование",
+             "name_kk": "Жабдық", 
+             "slug": "hardware"
+             },
+            {"name_en": "Services", 
+             "name_ru": "Услуги",
+             "name_kk": "Қызметтер", 
+             "slug": "services"
+             },
+            {"name_en": "Consulting", 
+             "name_ru": "Консалтинг",
+             "name_kk": "Консалтинг", 
+             "slug": "consulting"
+             },
+            {"name_en": "Support", 
+             "name_ru": "Поддержка",
+             "name_kk": "Қолдау", 
+             "slug": "support"
+             },
         ]
         for data in categories:
             Category.objects.get_or_create(slug=data["slug"], defaults=data)
         self.stdout.write(f"  Categories: {Category.objects.count()}")
 
-    # ─── Tags ──────────────────────────────────────────────────────────────
+    #  Tags 
     def _create_tags(self) -> None:
         """Seed a small fixed tag vocabulary."""
         tags: list[dict[str, str]] = [
@@ -129,40 +153,66 @@ class Command(BaseCommand):
             Tag.objects.get_or_create(slug=data["slug"], defaults=data)
         self.stdout.write(f"  Tags:       {Tag.objects.count()}")
 
-    # ─── Clients ───────────────────────────────────────────────────────────
+    #  Clients 
     def _create_clients(self) -> None:
         """Seed a handful of clients with realistic-looking KZ data."""
         clients_data: list[dict[str, str]] = [
-            {"first_name": "Nurlan", "last_name": "Abenov",
-             "email": "nurlan@kaspi.kz", "phone": "+77011234567",
-             "address": "Almaty, Abay Ave 1"},
-            {"first_name": "Dinara", "last_name": "Sagintayeva",
-             "email": "dinara@halyk.kz", "phone": "+77022345678",
-             "address": "Astana, Respublika Ave 10"},
-            {"first_name": "Maxim", "last_name": "Ivanov",
-             "email": "maxim@kcell.kz", "phone": "+77033456789",
-             "address": "Almaty, Dostyk St 5"},
-            {"first_name": "Aisha", "last_name": "Bekova",
-             "email": "aisha@beeline.kz", "phone": "+77044567890",
-             "address": "Shymkent, Baitursynov St 3"},
-            {"first_name": "Sergey", "last_name": "Kozlov",
-             "email": "sergey@aktobe.kz", "phone": "+77055678901",
-             "address": "Aktobe, Maresyev St 7"},
-            {"first_name": "Zarina", "last_name": "Nurmagambetova",
-             "email": "zarina@samruk.kz", "phone": "+77066789012",
-             "address": "Astana, Kabanbay Batyr St 2"},
-            {"first_name": "Arman", "last_name": "Dzhaksybekov",
-             "email": "arman@kegoc.kz", "phone": "+77077890123",
-             "address": "Almaty, Al-Farabi Ave 15"},
-            {"first_name": "Olga", "last_name": "Smirnova",
-             "email": "olga@kazpost.kz", "phone": "+77088901234",
-             "address": "Almaty, Seifullin St 20"},
+            {
+                "first_name": "Nurlan", "last_name": "Abenov",
+                "email": "nurlan@kaspi.kz", "phone": "+77011111111",
+                "address": "Almaty, Abay Ave 1",
+            },
+            {
+                "first_name": "Dinara", "last_name": "Sagintayeva",
+                "email": "dinara@halyk.kz", "phone": "+77022222222",
+                "address": "Astana, Respublika Ave 10",
+            },
+            {
+                "first_name": "Maxim", "last_name": "Ivanov",
+                "email": "maxim@kcell.kz", "phone": "+77033333333",
+                "address": "Almaty, Dostyk St 5",
+            },
+            {
+                "first_name": "Aisha", "last_name": "Bekova",
+                "email": "aisha@beeline.kz", "phone": "+77044444444",
+                "address": "Shymkent, Baitursynov St 3",
+            },
+            {
+                "first_name": "Sergey", "last_name": "Kozlov",
+                "email": "sergey@aktobe.kz", "phone": "+77055555555",
+                "address": "Aktobe, Maresyev St 7",
+            },
+            {
+                "first_name": "Zarina", "last_name": "Nurmagambetova",
+                "email": "zarina@samruk.kz", "phone": "+77066666666",
+                "address": "Astana, Kabanbay Batyr St 2",
+            },
+            {
+                "first_name": "Arman", "last_name": "Dzhaksybekov",
+                "email": "arman@kegoc.kz", "phone": "+77077777777",
+                "address": "Almaty, Al-Farabi Ave 15",
+            },
+            {
+                "first_name": "Olga", "last_name": "Smirnova",
+                "email": "olga@kazpost.kz", "phone": "+77088888888",
+                "address": "Almaty, Seifullin St 20",
+            },
+            {
+                "first_name": "Dauren", "last_name": "Seitkali",
+                "email": "dauren@air.kz", "phone": "+77099999999",
+                "address": "Almaty, Furmanov St 240",
+            },
+            {
+                "first_name": "Madina", "last_name": "Akhmetova",
+                "email": "madina@kztelecom.kz", "phone": "+77010101010",
+                "address": "Astana, Beibitshilik St 18",
+            },
         ]
         for data in clients_data:
             Client.objects.get_or_create(email=data["email"], defaults=data)
         self.stdout.write(f"  Clients:    {Client.objects.count()}")
 
-    # ─── Products ──────────────────────────────────────────────────────────
+    # Products 
     def _create_products(self) -> None:
         """Seed products linked to categories and tags."""
         admin = self.User.objects.filter(is_staff=True).first()  # type: ignore[attr-defined]
@@ -178,32 +228,70 @@ class Command(BaseCommand):
         tag_discount = Tag.objects.get(slug="discount")
 
         products_data: list[dict[str, Any]] = [
-            {"name": "CRM Pro License", "slug": "crm-pro-license",
-             "category": software, "price": "99000.00",
-             "description": "Annual CRM Pro license", "tags": [tag_vip]},
-            {"name": "CRM Enterprise", "slug": "crm-enterprise",
-             "category": software, "price": "450000.00",
-             "description": "Enterprise CRM license", "tags": [tag_enterprise, tag_vip]},
-            {"name": "Server Setup", "slug": "server-setup",
-             "category": hardware, "price": "250000.00",
-             "description": "Server installation and configuration",
-             "tags": [tag_enterprise]},
-            {"name": "Cloud Backup", "slug": "cloud-backup",
-             "category": services, "price": "15000.00",
-             "description": "Off-site cloud backup", "tags": [tag_discount]},
-            {"name": "IT Consulting", "slug": "it-consulting",
-             "category": consulting, "price": "80000.00",
-             "description": "IT infrastructure consulting", "tags": []},
-            {"name": "Support Plan Basic", "slug": "support-plan-basic",
-             "category": support, "price": "25000.00",
-             "description": "Basic support plan", "tags": [tag_discount]},
-            {"name": "Support Plan Premium", "slug": "support-plan-premium",
-             "category": support, "price": "75000.00",
-             "description": "24/7 premium support",
-             "tags": [tag_vip, tag_enterprise]},
-            {"name": "Mobile CRM App", "slug": "mobile-crm-app",
-             "category": software, "price": "35000.00",
-             "description": "Mobile CRM application", "tags": []},
+            {
+            "name": "CRM Pro License", 
+            "slug": "crm-pro-license",
+            "category": software, 
+            "price": "99000.00",
+            "description": "Annual CRM Pro license", 
+            "tags": [tag_vip]
+            },
+            {
+            "name": "CRM Enterprise", 
+             "slug": "crm-enterprise",
+             "category": software, 
+             "price": "450000.00",
+             "description": "Enterprise CRM license", 
+             "tags": [tag_enterprise, tag_vip]
+            },
+            {
+            "name": "Server Setup", 
+            "slug": "server-setup",
+            "category": hardware, 
+            "price": "250000.00",
+            "description": "Server installation and configuration",
+            "tags": [tag_enterprise]
+            },
+            {
+            "name": "Cloud Backup", 
+            "slug": "cloud-backup",
+            "category": services, 
+            "price": "15000.00",
+            "description": "Off-site cloud backup", 
+            "tags": [tag_discount]
+            },
+            {
+            "name": "IT Consulting", 
+            "slug": "it-consulting",
+            "category": consulting, 
+            "price": "80000.00",
+            "description": "IT infrastructure consulting", 
+            "tags": []
+            },
+            {
+            "name": "Support Plan Basic", 
+            "slug": "support-plan-basic",
+            "category": support, 
+            "price": "25000.00",
+            "description": "Basic support plan", 
+            "tags": [tag_discount]
+            },
+            {
+            "name": "Support Plan Premium", 
+            "slug": "support-plan-premium",
+            "category": support, 
+            "price": "75000.00",
+            "description": "24/7 premium support",
+            "tags": [tag_vip, tag_enterprise]
+            },
+            {
+            "name": "Mobile CRM App", 
+            "slug": "mobile-crm-app",
+            "category": software, 
+            "price": "35000.00",
+            "description": "Mobile CRM application", 
+            "tags": [tag_enterprise, tag_vip]
+            },
         ]
         for data in products_data:
             tags = data.pop("tags")
@@ -215,7 +303,7 @@ class Command(BaseCommand):
                 product.tags.set(tags)
         self.stdout.write(f"  Products:   {Product.objects.count()}")
 
-    # ─── Deals ─────────────────────────────────────────────────────────────
+    #  Deals 
     def _create_deals(self) -> None:
         """Seed deals across all four statuses, with realistic amounts."""
         clients = list(Client.objects.all())
@@ -256,7 +344,7 @@ class Command(BaseCommand):
             )
         self.stdout.write(f"  Deals:      {Deal.objects.count()}")
 
-    # ─── Tasks ─────────────────────────────────────────────────────────────
+    #  Tasks 
     def _create_tasks(self) -> None:
         """Seed tasks across all three statuses."""
         users = list(self.User.objects.all())  # type: ignore[attr-defined]
@@ -304,7 +392,7 @@ class Command(BaseCommand):
             )
         self.stdout.write(f"  Tasks:      {Task.objects.count()}")
 
-    # ─── Comments ──────────────────────────────────────────────────────────
+    #  Comments 
     def _create_comments(self) -> None:
         """Seed comments on the first few tasks and deals."""
         users = list(self.User.objects.all())  # type: ignore[attr-defined]
@@ -331,25 +419,25 @@ class Command(BaseCommand):
         for i, task in enumerate(tasks):
             Comment.objects.get_or_create(
                 content_type=ct_task,
-                object_id=task.id,
+                object_id=task.pk,
                 author=users[i % len(users)],
                 defaults={"body": task_comments[i]},
             )
         for i, deal in enumerate(deals):
             Comment.objects.get_or_create(
                 content_type=ct_deal,
-                object_id=deal.id,
+                object_id=deal.pk,
                 author=users[i % len(users)],
                 defaults={"body": deal_comments[i]},
             )
         self.stdout.write(f"  Comments:   {Comment.objects.count()}")
 
-    # ─── Summary ───────────────────────────────────────────────────────────
+    #  Summary 
     def _print_summary(self) -> None:
         """Print final row counts and the demo credentials."""
         user_count = self.User.objects.count()  # type: ignore[attr-defined]
         self.stdout.write("\nDatabase totals:")
-        self.stdout.write(f"   Users:      {user_count}")
+        self.stdout.write(f"   Users:      {self.User.objects.count()}")
         self.stdout.write(f"   Categories: {Category.objects.count()}")
         self.stdout.write(f"   Tags:       {Tag.objects.count()}")
         self.stdout.write(f"   Clients:    {Client.objects.count()}")
