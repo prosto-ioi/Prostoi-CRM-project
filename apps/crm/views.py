@@ -23,12 +23,14 @@ from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.serializers import BaseSerializer
-
+from django.db import transaction
 from .cache import (
     get_deals_list_cache,
     invalidate_deals_cache,
     set_deals_list_cache,
 )
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from .filters import DealFilter, ProductFilter, TaskFilter
 from .models import Category, Client, Comment, Deal, Product, Tag, Task
 from .permissions import IsAdminOrReadOnly, IsOwnerOrReadOnly
@@ -138,9 +140,9 @@ class ClientViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     read_serializer_class = ClientReadSerializer
     write_serializer_class = ClientWriteSerializer
 
-    def perform_create(self, serializer: BaseSerializer):
+    def perform_create(self, serializer: BaseSerializer) -> None:
         client = serializer.save()
-        send_welcome_email.delay(client.id)
+        transaction.on_commit(lambda: send_welcome_email.delay(client.id))
 
 
 # Product 
@@ -192,6 +194,21 @@ class ProductViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     def perform_create(self, serializer: BaseSerializer) -> None:
         # Stamp ``created_by`` from the request — never trust client input.
         serializer.save(created_by=self.request.user)
+    def perform_update(self, serializer: BaseSerializer) -> None:
+        product = serializer.save()
+        channel_layer = get_channel_layer()
+        if channel_layer is None:
+            return
+
+        async_to_sync(channel_layer.group_send)(
+            "inventory_updates",
+            {
+                "type": "inventory_update",
+                "product_id": product.id,
+                "stock_count": getattr(product, "stock_count", None),
+                "in_stock": product.in_stock,
+            },
+        )
 
 
 # Deal 

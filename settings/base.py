@@ -33,6 +33,7 @@ AUTH_USER_MODEL = "users.User"
 
 # ─── Apps ───────────────────────────────────────────────────────────────────
 INSTALLED_APPS = [
+    "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -241,6 +242,16 @@ CELERY_BEAT_SCHEDULE = {
     "daily-stock-check": {
         "task": "crm.tasks.daily_stock_check",
         "schedule": crontab(hour=2, minute=0),
+    },
+}
+
+ASGI_APPLICATION = "settings.asgi.application"
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": ["redis://127.0.0.1:6379/2"],
+        },
     },
 }
 
