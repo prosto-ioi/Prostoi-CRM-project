@@ -8,10 +8,13 @@ restricted to the row's owner (or staff).
 """
 
 from __future__ import annotations
-
-from typing import ClassVar, cast
+import asyncio
+import logging
+from typing import ClassVar, cast, Any
 from .pubsub import publish_deal_event
-
+import httpx
+from channels.db import database_sync_to_async
+from django.http import JsonResponse
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import QuerySet
 from django_filters.rest_framework import DjangoFilterBackend
@@ -51,7 +54,7 @@ from .serializers import (
     TaskWriteSerializer,
 )
 from .tasks import send_welcome_email
-
+logger = logging.getLogger(__name__)
 # Actions that mutate state — used by the Read/Write serializer switcher.
 _WRITE_ACTIONS: frozenset[str] = frozenset({"create", "update", "partial_update"})
 
@@ -405,3 +408,77 @@ class CommentViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     def perform_create(self, serializer: BaseSerializer) -> None:
         # Author is injected from the request — never trusted from input.
         serializer.save(author=self.request.user)
+
+@database_sync_to_async
+def _get_dashboard_database_counts() -> dict[str, int]:
+    return {
+        "clients_count": Client.objects.count(),
+        "deals_count": Deal.objects.count(),
+        "tasks_count": Task.objects.count(),
+    }
+
+async def _fetch_exchange_rates() -> dict[str, Any]:
+    url = "https://open.er-api.com/v6/latest/USD"
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            payload = await response.json()
+        rates = payload.get("rates", {})
+        return {
+            "base": payload.get("base_code", "USD"),
+            "rates":{
+                "KZT": rates.get("KZT"),
+                "RUB": rates.get("RUB"),
+                "EUR": rates.get("EUR"),
+            },
+        }
+    except Exception as exc:
+        logger.warning("failed to fetch exchange rates", exc)
+        return {
+            "base": "USD",
+            "rates": {
+                "KZT": None,
+                "RUB": None,
+                "EUR": None,
+            },
+            "error": "exchange_rates_unavailable",
+        }
+
+async def _fetch_almaty_time() -> dict[str, Any]:
+    url = "https://timeapi.io/api/time/current/zone?timeZone=Asia/Almaty"
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            payload = response.json()
+            return {
+                "dateTime": payload.get("datetime"),
+                "date": payload.get("date"),
+                "time": payload.get("time"),
+                "timeZone": payload.get("timeZone", "Asia/Almaty"),
+            }
+    except Exception as exc:
+        logger.warning("failed to fetch almaty time: %s", exc)
+        return {
+            "dateTime": None,
+            "date": None,
+            "time": None,
+            "timeZone": "Asia/Almaty",
+            "error": "almaty_time_unavailable",
+        }
+
+async def get_dashboard_stats(request):
+    database_counts, exchange_rates, almaty_time = await asyncio.gather(
+        _get_dashboard_database_counts(),
+        _fetch_exchange_rates(),
+        _fetch_almaty_time(),
+    )
+    return JsonResponse(
+        {
+            "database_counts": database_counts,
+            "exchange_rates": exchange_rates,
+            "almaty_time": almaty_time,
+        }
+    )
