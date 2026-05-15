@@ -17,8 +17,8 @@ from django_redis import get_redis_connection
 class RateLimitMiddleware:
     """Fixed-window rate limiter backed by Redis.
 
-    Must be placed early in MIDDLEWARE so it runs before heavyweight
-    middleware (auth, sessions, etc.).
+    Must run after Django's AuthenticationMiddleware so authenticated
+    requests can be keyed by user id instead of only by client IP.
     """
 
     AUTHENTICATED_LIMIT: int = 100
