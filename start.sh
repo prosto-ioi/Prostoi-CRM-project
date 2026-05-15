@@ -10,7 +10,7 @@ NC = "\033[0m"
 ok() { echo -e "${GREEN} $1${NC}"; }
 fail() {echo -e "${RED} $1${NC}"; exit 1;}
 
-# 1) Check required environment variables from settings/.env
+# 1) Check required environment variables from settings/.env.
 if [ ! -f "settings/.env" ]; then
     fail "settings/.env not found. Create it before running this script."
 fi
@@ -27,7 +27,7 @@ done
 
 ok "Environment variables checked."
 
-# 2) Create virtualenv if not exists and install dependencies
+# 2) Create virtualenv if not exists and install dependencies.
 
 if [ ! -d "venv" ]; then 
     python3 -m venv venv 
