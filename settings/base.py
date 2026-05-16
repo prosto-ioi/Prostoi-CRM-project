@@ -10,7 +10,7 @@ import os
 import sys
 from datetime import timedelta
 from pathlib import Path
-
+from celery.schedules import crontab
 # ─── Paths ──────────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent.parent
 # Allow ``from users.models import User`` instead of ``apps.users.models`` —
@@ -51,11 +51,11 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "corsheaders.middleware.CorsMiddleware",
-    "apps.crm.middleware.RateLimitMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.crm.middleware.RateLimitMiddleware",
     # ``UserPreferencesMiddleware`` reads ``request.user`` to pick a language
     # + timezone, so it MUST follow ``AuthenticationMiddleware``. It also
     # replaces Django's stock ``LocaleMiddleware`` — we don't include that
@@ -223,7 +223,27 @@ RATE_LIMIT_REGISTER_MAX: int = 5    # POST /api/auth/register/
 RATE_LIMIT_TOKEN_MAX: int = 10
 RATE_LIMIT_DEALS_MAX: int = 20
 RATE_LIMIT_WINDOW: int = 60
-  
+
+CELERY_BROKER_URL = os.getenv(
+    "CRM_CELERY_BROKER_URL",
+    "redis://127.0.0.1:6379/1",
+)
+CELERY_RESULT_BACKEND = os.getenv(
+    "CRM_CELERY_RESULT_BACKEND",
+    "redis://127.0.0.1:6379/1",
+)
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = TIME_ZONE
+
+CELERY_BEAT_SCHEDULE = {
+    "daily-stock-check": {
+        "task": "crm.tasks.daily_stock_check",
+        "schedule": crontab(hour=2, minute=0),
+    },
+}
+
 # Logging 
 # Single config that covers both local dev and prod. ``CRM_LOG_LEVEL`` may be
 # set in ``.env`` to bump verbosity (``DEBUG`` for noisy local work,

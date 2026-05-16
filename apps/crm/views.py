@@ -48,6 +48,7 @@ from .serializers import (
     TaskReadSerializer,
     TaskWriteSerializer,
 )
+from .tasks import send_welcome_email
 
 # Actions that mutate state — used by the Read/Write serializer switcher.
 _WRITE_ACTIONS: frozenset[str] = frozenset({"create", "update", "partial_update"})
@@ -136,6 +137,10 @@ class ClientViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     permission_classes = (IsAuthenticated,)
     read_serializer_class = ClientReadSerializer
     write_serializer_class = ClientWriteSerializer
+
+    def perform_create(self, serializer: BaseSerializer):
+        client = serializer.save()
+        send_welcome_email.delay(client.id)
 
 
 # Product 
