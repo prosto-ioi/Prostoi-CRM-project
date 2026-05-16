@@ -1,0 +1,111 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      CRM_ENV_ID: prod
+      CRM_DB_HOST: db
+      CRM_DB_PORT: 5432
+      CRM_REDIS_URL: redis://redis:6379/0
+      CRM_CELERY_BROKER_URL: redis://redis:6379/1
+      CRM_CELERY_RESULT_BACKEND: redis://redis:6379/1
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import socket; socket.create_connection(('127.0.0.1', 8000), 3).close()\""
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      CRM_ENV_ID: prod
+      CRM_DB_HOST: db
+      CRM_DB_PORT: 5432
+      CRM_REDIS_URL: redis://redis:6379/0
+      CRM_CELERY_BROKER_URL: redis://redis:6379/1
+      CRM_CELERY_RESULT_BACKEND: redis://redis:6379/1
+    command: ["celery", "-A", "settings", "worker", "-l", "info"]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      CRM_ENV_ID: prod
+      CRM_DB_HOST: db
+      CRM_DB_PORT: 5432
+      CRM_REDIS_URL: redis://redis:6379/0
+      CRM_CELERY_BROKER_URL: redis://redis:6379/1
+      CRM_CELERY_RESULT_BACKEND: redis://redis:6379/1
+    command: ["celery", "-A", "settings", "beat", "-l", "info"]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  db:
+    image: postgres:16
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${CRM_DB_NAME}
+      POSTGRES_USER: ${CRM_DB_USER}
+      POSTGRES_PASSWORD: ${CRM_DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    env_file:
+      - .env
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  pgdata:
+  redisdata:
