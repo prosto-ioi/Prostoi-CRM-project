@@ -84,3 +84,24 @@ class IsOwnerOrReadOnly(BasePermission):
             if hasattr(obj, field):
                 return getattr(obj, field) == request.user
         return False
+
+
+class IsStaffOrReadOnly(BasePermission):
+    """Explicit staff-only write permission.
+
+    Functionally identical to IsAdminOrReadOnly but with a name that makes
+    intent clear when applied to staff-gated endpoints (not just admin panel).
+    """
+
+    message = "Only staff members can perform this action."
+
+    def has_permission(self, request: Request, view: APIView) -> bool:
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.method in SAFE_METHODS:
+            return True
+        return bool(request.user.is_staff)  # type: ignore
+
+
+
+
