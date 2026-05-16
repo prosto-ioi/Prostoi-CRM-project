@@ -128,6 +128,7 @@ class ProductReadSerializer(serializers.ModelSerializer):
 
     category_detail = CategoryReadSerializer(source="category", read_only=True)
     tags_detail = TagReadSerializer(source="tags", many=True, read_only=True)
+    deals_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -145,8 +146,15 @@ class ProductReadSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "created_by",
+            "deals_count",
         )
         read_only_fields = fields
+
+    def get_deals_count(self, obj: Product) -> int:
+        annotated_count = getattr(obj, "deals_count", None)
+        if annotated_count is not None:
+            return int(annotated_count)
+        return obj.deals.count()
 
 
 class ProductWriteSerializer(serializers.ModelSerializer):

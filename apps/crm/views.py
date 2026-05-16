@@ -16,18 +16,18 @@ import httpx
 from channels.db import database_sync_to_async
 from django.http import JsonResponse
 from django.contrib.contenttypes.models import ContentType
-from django.db.models import QuerySet
+from django.db.models import Count, Prefetch, QuerySet
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view, OpenApiResponse, OpenApiExample
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.serializers import BaseSerializer
 from rest_framework import serializers
-from .serializers import ProductReadSerializer, ProductWriteSerializer
 from django.db import transaction
 from .cache import (
     get_deals_list_cache,
@@ -90,14 +90,136 @@ class ReadWriteSerializerMixin:
         return self.read_serializer_class
 
 
-# Category 
+# Category
 @extend_schema_view(
-    list=extend_schema(summary="List categories", tags=["Categories"]),
-    retrieve=extend_schema(summary="Retrieve category", tags=["Categories"]),
-    create=extend_schema(summary="Create category (staff only)", tags=["Categories"]),
-    update=extend_schema(summary="Replace category (staff only)", tags=["Categories"]),
-    partial_update=extend_schema(summary="Patch category (staff only)", tags=["Categories"]),
-    destroy=extend_schema(summary="Delete category (staff only)", tags=["Categories"]),
+    list=extend_schema(
+        summary="List categories",
+        description=(
+            "Requires JWT authentication. Supports filtering by slug, text search across "
+            "localized names, and ordering by English name. Any authenticated user may read."
+        ),
+        tags=["Categories"],
+        request=None,
+        responses={
+            status.HTTP_200_OK: CategoryReadSerializer(many=True),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+        },
+        examples=[
+            OpenApiExample(
+                "Category list response",
+                value=[
+                    {
+                        "id": 1,
+                        "name": "Software",
+                        "name_en": "Software",
+                        "name_ru": "ПО",
+                        "name_kk": "Бағдарлама",
+                        "slug": "software",
+                    }
+                ],
+                response_only=True,
+            ),
+        ],
+    ),
+    retrieve=extend_schema(
+        summary="Retrieve category",
+        description="Requires JWT authentication. Any authenticated user may read a category.",
+        tags=["Categories"],
+        request=None,
+        responses={
+            status.HTTP_200_OK: CategoryReadSerializer,
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Category not found"),
+        },
+        examples=[
+            OpenApiExample(
+                "Category detail response",
+                value={
+                    "id": 1,
+                    "name": "Software",
+                    "name_en": "Software",
+                    "name_ru": "ПО",
+                    "name_kk": "Бағдарлама",
+                    "slug": "software",
+                },
+                response_only=True,
+            ),
+        ],
+    ),
+    create=extend_schema(
+        summary="Create category",
+        description="Requires JWT authentication and staff/superuser permission.",
+        tags=["Categories"],
+        request=CategoryWriteSerializer,
+        responses={
+            status.HTTP_201_CREATED: CategoryReadSerializer,
+            status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Staff permission required"),
+        },
+        examples=[
+            OpenApiExample(
+                "Create category request",
+                value={"name_en": "Software", "name_ru": "ПО", "name_kk": "Бағдарлама"},
+                request_only=True,
+            ),
+        ],
+    ),
+    update=extend_schema(
+        summary="Replace category",
+        description="Requires JWT authentication and staff/superuser permission.",
+        tags=["Categories"],
+        request=CategoryWriteSerializer,
+        responses={
+            status.HTTP_200_OK: CategoryReadSerializer,
+            status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Staff permission required"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Category not found"),
+        },
+        examples=[
+            OpenApiExample(
+                "Replace category request",
+                value={"name_en": "Services", "name_ru": "Услуги", "name_kk": "Қызметтер"},
+                request_only=True,
+            ),
+        ],
+    ),
+    partial_update=extend_schema(
+        summary="Patch category",
+        description="Requires JWT authentication and staff/superuser permission.",
+        tags=["Categories"],
+        request=CategoryWriteSerializer,
+        responses={
+            status.HTTP_200_OK: CategoryReadSerializer,
+            status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Staff permission required"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Category not found"),
+        },
+        examples=[
+            OpenApiExample(
+                "Patch category request",
+                value={"name_ru": "Сервисы"},
+                request_only=True,
+            ),
+        ],
+    ),
+    destroy=extend_schema(
+        summary="Delete category",
+        description="Requires JWT authentication and staff/superuser permission.",
+        tags=["Categories"],
+        request=None,
+        responses={
+            status.HTTP_204_NO_CONTENT: OpenApiResponse(description="Category deleted"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Staff permission required"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Category not found"),
+        },
+        examples=[
+            OpenApiExample("Delete category response", value=None, response_only=True),
+        ],
+    ),
 )
 class CategoryViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     """Public to read; staff-only to write."""
@@ -105,43 +227,282 @@ class CategoryViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     queryset = Category.objects.all()
     lookup_field = "slug"
     permission_classes = (IsAdminOrReadOnly,)
+    filter_backends = (DjangoFilterBackend, SearchFilter, OrderingFilter)
+    filterset_fields = ("slug",)
+    search_fields = ("name_en", "name_ru", "name_kk")
+    ordering_fields = ("name_en",)
     read_serializer_class = CategoryReadSerializer
     write_serializer_class = CategoryWriteSerializer
 
 
-# Tag 
+# Tag
 @extend_schema_view(
-    list=extend_schema(summary="List tags", tags=["Tags"]),
-    retrieve=extend_schema(summary="Retrieve tag", tags=["Tags"]),
-    create=extend_schema(summary="Create tag (staff only)", tags=["Tags"]),
-    update=extend_schema(summary="Replace tag (staff only)", tags=["Tags"]),
-    partial_update=extend_schema(summary="Patch tag (staff only)", tags=["Tags"]),
-    destroy=extend_schema(summary="Delete tag (staff only)", tags=["Tags"]),
+    list=extend_schema(
+        summary="List tags",
+        description=(
+            "Requires JWT authentication. Supports filtering by name or slug, search by "
+            "name, and ordering by name. Any authenticated user may read."
+        ),
+        tags=["Tags"],
+        request=None,
+        responses={
+            status.HTTP_200_OK: TagReadSerializer(many=True),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+        },
+        examples=[
+            OpenApiExample(
+                "Tag list response",
+                value=[{"id": 1, "name": "priority", "slug": "priority"}],
+                response_only=True,
+            ),
+        ],
+    ),
+    retrieve=extend_schema(
+        summary="Retrieve tag",
+        description="Requires JWT authentication. Any authenticated user may read a tag.",
+        tags=["Tags"],
+        request=None,
+        responses={
+            status.HTTP_200_OK: TagReadSerializer,
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Tag not found"),
+        },
+        examples=[
+            OpenApiExample(
+                "Tag detail response",
+                value={"id": 1, "name": "priority", "slug": "priority"},
+                response_only=True,
+            ),
+        ],
+    ),
+    create=extend_schema(
+        summary="Create tag",
+        description="Requires JWT authentication and staff/superuser permission.",
+        tags=["Tags"],
+        request=TagWriteSerializer,
+        responses={
+            status.HTTP_201_CREATED: TagReadSerializer,
+            status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Staff permission required"),
+        },
+        examples=[
+            OpenApiExample(
+                "Create tag request",
+                value={"name": "priority"},
+                request_only=True,
+            ),
+        ],
+    ),
+    update=extend_schema(
+        summary="Replace tag",
+        description="Requires JWT authentication and staff/superuser permission.",
+        tags=["Tags"],
+        request=TagWriteSerializer,
+        responses={
+            status.HTTP_200_OK: TagReadSerializer,
+            status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Staff permission required"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Tag not found"),
+        },
+        examples=[
+            OpenApiExample("Replace tag request", value={"name": "vip"}, request_only=True),
+        ],
+    ),
+    partial_update=extend_schema(
+        summary="Patch tag",
+        description="Requires JWT authentication and staff/superuser permission.",
+        tags=["Tags"],
+        request=TagWriteSerializer,
+        responses={
+            status.HTTP_200_OK: TagReadSerializer,
+            status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Staff permission required"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Tag not found"),
+        },
+        examples=[
+            OpenApiExample("Patch tag request", value={"name": "hot"}, request_only=True),
+        ],
+    ),
+    destroy=extend_schema(
+        summary="Delete tag",
+        description="Requires JWT authentication and staff/superuser permission.",
+        tags=["Tags"],
+        request=None,
+        responses={
+            status.HTTP_204_NO_CONTENT: OpenApiResponse(description="Tag deleted"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Staff permission required"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Tag not found"),
+        },
+        examples=[
+            OpenApiExample("Delete tag response", value=None, response_only=True),
+        ],
+    ),
 )
-class TagViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet): 
+class TagViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     """Public to read; staff-only to write."""
 
     queryset = Tag.objects.all()
     lookup_field = "slug"
     permission_classes = (IsAdminOrReadOnly,)
+    filter_backends = (DjangoFilterBackend, SearchFilter, OrderingFilter)
+    filterset_fields = ("slug", "name")
+    search_fields = ("name",)
+    ordering_fields = ("name",)
     read_serializer_class = TagReadSerializer
     write_serializer_class = TagWriteSerializer
 
 
-# Client 
+# Client
 @extend_schema_view(
-    list=extend_schema(summary="List clients", tags=["Clients"]),
-    retrieve=extend_schema(summary="Retrieve client", tags=["Clients"]),
-    create=extend_schema(summary="Create client", tags=["Clients"]),
-    update=extend_schema(summary="Replace client", tags=["Clients"]),
-    partial_update=extend_schema(summary="Patch client", tags=["Clients"]),
-    destroy=extend_schema(summary="Delete client", tags=["Clients"]),
+    list=extend_schema(
+        summary="List clients",
+        description=(
+            "Requires JWT authentication. Supports filtering by email, search by "
+            "name/email/phone, and ordering by creation, update, or last name."
+        ),
+        tags=["Clients"],
+        request=None,
+        responses={
+            status.HTTP_200_OK: ClientReadSerializer(many=True),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+        },
+        examples=[
+            OpenApiExample(
+                "Client list response",
+                value=[
+                    {
+                        "id": 1,
+                        "first_name": "Aruzhan",
+                        "last_name": "Kim",
+                        "email": "aruzhan@example.com",
+                        "phone": "+77001112233",
+                        "address": "Almaty",
+                    }
+                ],
+                response_only=True,
+            ),
+        ],
+    ),
+    retrieve=extend_schema(
+        summary="Retrieve client",
+        description="Requires JWT authentication. Any authenticated user may read a client.",
+        tags=["Clients"],
+        request=None,
+        responses={
+            status.HTTP_200_OK: ClientReadSerializer,
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Client not found"),
+        },
+        examples=[
+            OpenApiExample(
+                "Client detail response",
+                value={
+                    "id": 1,
+                    "first_name": "Aruzhan",
+                    "last_name": "Kim",
+                    "email": "aruzhan@example.com",
+                    "phone": "+77001112233",
+                    "address": "Almaty",
+                },
+                response_only=True,
+            ),
+        ],
+    ),
+    create=extend_schema(
+        summary="Create client",
+        description=(
+            "Requires JWT authentication. Any authenticated user may create a client; "
+            "a welcome email task is queued after commit."
+        ),
+        tags=["Clients"],
+        request=ClientWriteSerializer,
+        responses={
+            status.HTTP_201_CREATED: ClientReadSerializer,
+            status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+        },
+        examples=[
+            OpenApiExample(
+                "Create client request",
+                value={
+                    "first_name": "Aruzhan",
+                    "last_name": "Kim",
+                    "email": "aruzhan@example.com",
+                    "phone": "+77001112233",
+                    "address": "Almaty",
+                },
+                request_only=True,
+            ),
+        ],
+    ),
+    update=extend_schema(
+        summary="Replace client",
+        description="Requires JWT authentication. Any authenticated user may update clients.",
+        tags=["Clients"],
+        request=ClientWriteSerializer,
+        responses={
+            status.HTTP_200_OK: ClientReadSerializer,
+            status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Client not found"),
+        },
+        examples=[
+            OpenApiExample(
+                "Replace client request",
+                value={
+                    "first_name": "Aruzhan",
+                    "last_name": "Kim",
+                    "email": "aruzhan@example.com",
+                    "phone": "+77001112233",
+                    "address": "Astana",
+                },
+                request_only=True,
+            ),
+        ],
+    ),
+    partial_update=extend_schema(
+        summary="Patch client",
+        description="Requires JWT authentication. Any authenticated user may patch clients.",
+        tags=["Clients"],
+        request=ClientWriteSerializer,
+        responses={
+            status.HTTP_200_OK: ClientReadSerializer,
+            status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Client not found"),
+        },
+        examples=[
+            OpenApiExample("Patch client request", value={"phone": "+77009998877"}, request_only=True),
+        ],
+    ),
+    destroy=extend_schema(
+        summary="Delete client",
+        description="Requires JWT authentication. Any authenticated user may delete clients.",
+        tags=["Clients"],
+        request=None,
+        responses={
+            status.HTTP_204_NO_CONTENT: OpenApiResponse(description="Client deleted"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Client not found"),
+        },
+        examples=[
+            OpenApiExample("Delete client response", value=None, response_only=True),
+        ],
+    ),
 )
 class ClientViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     """Any authenticated user can manage clients (no per-row ownership)."""
 
     queryset = Client.objects.all()
     permission_classes = (IsAuthenticated,)
+    filter_backends = (DjangoFilterBackend, SearchFilter, OrderingFilter)
+    filterset_fields = ("email",)
+    search_fields = ("first_name", "last_name", "email", "phone")
+    ordering_fields = ("created_at", "updated_at", "last_name")
     read_serializer_class = ClientReadSerializer
     write_serializer_class = ClientWriteSerializer
 
@@ -150,46 +511,94 @@ class ClientViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
         transaction.on_commit(lambda: send_welcome_email.delay(client.id))
 
 
-# Product 
+# Product
 @extend_schema_view(
     list=extend_schema(
         summary="List products",
         description=(
-            "Returns a list"
-            "Requires IsAuthenticated"
+            "Requires JWT authentication. Supports category, price range, stock, "
+            "search, and ordering filters. Returns nested category/tag data plus "
+            "the annotated deals_count field."
         ),
         tags=["Products"],
+        request=None,
+        parameters=[
+            OpenApiParameter("category", OpenApiTypes.STR, description="Category slug"),
+            OpenApiParameter("min_price", OpenApiTypes.NUMBER, description="Minimum price"),
+            OpenApiParameter("max_price", OpenApiTypes.NUMBER, description="Maximum price"),
+            OpenApiParameter("in_stock", OpenApiTypes.BOOL, description="Filter by stock flag"),
+            OpenApiParameter("search", OpenApiTypes.STR, description="Search name or description"),
+            OpenApiParameter("ordering", OpenApiTypes.STR, description="price or created_at"),
+        ],
         responses={
-            200: ProductReadSerializer(many=True),
-            401: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_200_OK: ProductReadSerializer(many=True),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
         },
+        examples=[
+            OpenApiExample(
+                "Product list response",
+                value=[
+                    {
+                        "id": 1,
+                        "name": "CRM setup",
+                        "slug": "crm-setup",
+                        "category": 1,
+                        "tags": [1, 2],
+                        "price": "4500.00",
+                        "description": "Implementation package",
+                        "in_stock": True,
+                        "created_by": 1,
+                        "deals_count": 3,
+                    }
+                ],
+                response_only=True,
+            ),
+        ],
     ),
     retrieve=extend_schema(
         summary="Retrieve product",
         description=(
-            "Returns one product by its lookup field"
-            "Requires IsAuthenticated"
+            "Requires JWT authentication. Returns one product by slug with nested "
+            "category/tag data and deals_count."
         ),
         tags=["Products"],
+        request=None,
         responses={
-            200: ProductReadSerializer,
-            401: OpenApiResponse(description="Unauthorized"),
-            404: OpenApiResponse(description="Not found"),
+            status.HTTP_200_OK: ProductReadSerializer,
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Product not found"),
         },
+        examples=[
+            OpenApiExample(
+                "Product detail response",
+                value={
+                    "id": 1,
+                    "name": "CRM setup",
+                    "slug": "crm-setup",
+                    "category": 1,
+                    "tags": [1, 2],
+                    "price": "4500.00",
+                    "description": "Implementation package",
+                    "in_stock": True,
+                    "created_by": 1,
+                    "deals_count": 3,
+                },
+                response_only=True,
+            ),
+        ],
     ),
     create=extend_schema(
         summary="Create product",
         description=(
-            "Creates a new product"
-            "Requires IsAuthenticated"
+            "Requires JWT authentication. Any authenticated user may create a product; "
+            "created_by is set from request.user."
         ),
         tags=["Products"],
         request=ProductWriteSerializer,
         responses={
-            201: ProductReadSerializer,
-            400: OpenApiResponse(description="validation error"),
-            401: OpenApiResponse(description="Unauthorized"),
-            403: OpenApiResponse(description="authenticated user doesn't have permission"),
+            status.HTTP_201_CREATED: ProductReadSerializer,
+            status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
         },
         examples=[
             OpenApiExample(
@@ -197,22 +606,84 @@ class ClientViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
                 value={
                     "name": "coffee",
                     "category": 1,
-                    "tags": [1,2],
+                    "tags": [1, 2],
                     "price": "4500.00",
                     "description": "Arabica coffee",
                     "in_stock": True,
                 },
-                response_only=True,
+                request_only=True,
             ),
+        ],
+    ),
+    update=extend_schema(
+        summary="Replace product",
+        description="Requires JWT authentication and product owner or staff permission.",
+        tags=["Products"],
+        request=ProductWriteSerializer,
+        responses={
+            status.HTTP_200_OK: ProductReadSerializer,
+            status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Owner or staff permission required"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Product not found"),
+        },
+        examples=[
+            OpenApiExample(
+                "Replace product request",
+                value={
+                    "name": "CRM setup",
+                    "category": 1,
+                    "tags": [1, 2],
+                    "price": "5000.00",
+                    "description": "Updated package",
+                    "in_stock": True,
+                },
+                request_only=True,
+            ),
+        ],
+    ),
+    partial_update=extend_schema(
+        summary="Patch product",
+        description="Requires JWT authentication and product owner or staff permission.",
+        tags=["Products"],
+        request=ProductWriteSerializer,
+        responses={
+            status.HTTP_200_OK: ProductReadSerializer,
+            status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Owner or staff permission required"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Product not found"),
+        },
+        examples=[
+            OpenApiExample("Patch product request", value={"in_stock": False}, request_only=True),
+        ],
+    ),
+    destroy=extend_schema(
+        summary="Delete product",
+        description="Requires JWT authentication and product owner or staff permission.",
+        tags=["Products"],
+        request=None,
+        responses={
+            status.HTTP_204_NO_CONTENT: OpenApiResponse(description="Product deleted"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Owner or staff permission required"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Product not found"),
+        },
+        examples=[
+            OpenApiExample("Delete product response", value=None, response_only=True),
         ],
     ),
 )
 class ProductViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     """Create is open to any authenticated user; per-row mutation is owner-only."""
 
-    queryset = Product.objects.select_related("category", "created_by").prefetch_related("tags")
+    queryset = (
+        Product.objects.select_related("category", "created_by")
+        .prefetch_related("tags")
+        .annotate(deals_count=Count("deals", distinct=True))
+    )
     lookup_field = "slug"
-    filter_backends = (DjangoFilterBackend,)
+    filter_backends = (DjangoFilterBackend, SearchFilter, OrderingFilter)
     filterset_class = ProductFilter
     search_fields = ("name", "description")
     ordering_fields = ("price", "created_at")
@@ -245,33 +716,177 @@ class ProductViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
         )
 
 
-# Deal 
+# Deal
 @extend_schema_view(
     list=extend_schema(
         summary="List deals",
         description=(
-            "Filters: `?status=new|in_progress|closed_won|closed_lost`, "
-            "`?client=id`, `?min_amount=1000`, `?max_amount=50000`."
+            "Requires JWT authentication. Supports status, client, product, amount range, "
+            "creation date range, search, and ordering filters. Returns nested client and "
+            "optimized nested product details."
         ),
         tags=["Deals"],
+        request=None,
         parameters=[
             OpenApiParameter("status", OpenApiTypes.STR, description="Deal status"),
             OpenApiParameter("client", OpenApiTypes.INT, description="Client id"),
+            OpenApiParameter("product", OpenApiTypes.INT, description="Product id"),
             OpenApiParameter("min_amount", OpenApiTypes.NUMBER, description="Min amount"),
             OpenApiParameter("max_amount", OpenApiTypes.NUMBER, description="Max amount"),
+            OpenApiParameter("created_after", OpenApiTypes.DATETIME, description="Created after"),
+            OpenApiParameter("created_before", OpenApiTypes.DATETIME, description="Created before"),
+            OpenApiParameter("search", OpenApiTypes.STR, description="Search by title"),
+            OpenApiParameter("ordering", OpenApiTypes.STR, description="amount or created_at"),
+        ],
+        responses={
+            status.HTTP_200_OK: DealReadSerializer(many=True),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+        },
+        examples=[
+            OpenApiExample(
+                "Deal list response",
+                value=[
+                    {
+                        "id": 1,
+                        "client": 1,
+                        "product": 1,
+                        "title": "Enterprise rollout",
+                        "amount": "12000.00",
+                        "status": "new",
+                        "closed_at": None,
+                        "created_by": 1,
+                    }
+                ],
+                response_only=True,
+            ),
         ],
     ),
-    retrieve=extend_schema(summary="Retrieve deal", tags=["Deals"]),
-    create=extend_schema(summary="Create deal", tags=["Deals"]),
-    update=extend_schema(summary="Replace deal (owner/staff)", tags=["Deals"]),
-    partial_update=extend_schema(summary="Patch deal (owner/staff)", tags=["Deals"]),
-    destroy=extend_schema(summary="Delete deal (owner/staff)", tags=["Deals"]),
+    retrieve=extend_schema(
+        summary="Retrieve deal",
+        description="Requires JWT authentication. Returns one deal with nested client/product details.",
+        tags=["Deals"],
+        request=None,
+        responses={
+            status.HTTP_200_OK: DealReadSerializer,
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Deal not found"),
+        },
+        examples=[
+            OpenApiExample(
+                "Deal detail response",
+                value={
+                    "id": 1,
+                    "client": 1,
+                    "product": 1,
+                    "title": "Enterprise rollout",
+                    "amount": "12000.00",
+                    "status": "new",
+                    "closed_at": None,
+                    "created_by": 1,
+                },
+                response_only=True,
+            ),
+        ],
+    ),
+    create=extend_schema(
+        summary="Create deal",
+        description=(
+            "Requires JWT authentication. Any authenticated user may create a deal; "
+            "created_by is set from request.user."
+        ),
+        tags=["Deals"],
+        request=DealWriteSerializer,
+        responses={
+            status.HTTP_201_CREATED: DealReadSerializer,
+            status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+        },
+        examples=[
+            OpenApiExample(
+                "Create deal request",
+                value={
+                    "client": 1,
+                    "product": 1,
+                    "title": "Enterprise rollout",
+                    "amount": "12000.00",
+                    "status": "new",
+                    "closed_at": None,
+                },
+                request_only=True,
+            ),
+        ],
+    ),
+    update=extend_schema(
+        summary="Replace deal",
+        description="Requires JWT authentication and deal owner or staff permission.",
+        tags=["Deals"],
+        request=DealWriteSerializer,
+        responses={
+            status.HTTP_200_OK: DealReadSerializer,
+            status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Owner or staff permission required"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Deal not found"),
+        },
+        examples=[
+            OpenApiExample(
+                "Replace deal request",
+                value={
+                    "client": 1,
+                    "product": 1,
+                    "title": "Enterprise rollout",
+                    "amount": "15000.00",
+                    "status": "in_progress",
+                    "closed_at": None,
+                },
+                request_only=True,
+            ),
+        ],
+    ),
+    partial_update=extend_schema(
+        summary="Patch deal",
+        description="Requires JWT authentication and deal owner or staff permission.",
+        tags=["Deals"],
+        request=DealWriteSerializer,
+        responses={
+            status.HTTP_200_OK: DealReadSerializer,
+            status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Owner or staff permission required"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Deal not found"),
+        },
+        examples=[
+            OpenApiExample("Patch deal request", value={"status": "closed_won"}, request_only=True),
+        ],
+    ),
+    destroy=extend_schema(
+        summary="Delete deal",
+        description="Requires JWT authentication and deal owner or staff permission.",
+        tags=["Deals"],
+        request=None,
+        responses={
+            status.HTTP_204_NO_CONTENT: OpenApiResponse(description="Deal deleted"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Owner or staff permission required"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Deal not found"),
+        },
+        examples=[
+            OpenApiExample("Delete deal response", value=None, response_only=True),
+        ],
+    ),
 )
 class DealViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     """Create is open to any authenticated user; per-row mutation is owner-only."""
 
-    queryset = Deal.objects.select_related("client", "product", "created_by")
-    filter_backends = (DjangoFilterBackend,)
+    queryset = Deal.objects.select_related("client", "created_by").prefetch_related(
+        Prefetch(
+            "product",
+            queryset=Product.objects.select_related("category", "created_by")
+            .prefetch_related("tags")
+            .annotate(deals_count=Count("deals", distinct=True)),
+        )
+    )
+    filter_backends = (DjangoFilterBackend, SearchFilter, OrderingFilter)
     filterset_class = DealFilter
     search_fields = ("title",)
     ordering_fields = ("amount", "created_at")
@@ -308,33 +923,167 @@ class DealViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
         invalidate_deals_cache()
         publish_deal_event("deal_deleted", deal_id)
 
-# Task 
+# Task
 @extend_schema_view(
     list=extend_schema(
         summary="List tasks",
         description=(
-            "Filters: `?status=pending|in_progress|completed`, "
-            "`?assigned_to=id`, `?client=id`, `?deal=id`."
+            "Requires JWT authentication. Supports status, assignee, client, deal, due-date, "
+            "search, and ordering filters. Returns task records with optimized FK loading."
         ),
         tags=["Tasks"],
+        request=None,
         parameters=[
             OpenApiParameter("status", OpenApiTypes.STR, description="Task status"),
             OpenApiParameter("assigned_to", OpenApiTypes.INT, description="Assignee id"),
             OpenApiParameter("client", OpenApiTypes.INT, description="Client id"),
             OpenApiParameter("deal", OpenApiTypes.INT, description="Deal id"),
+            OpenApiParameter("due_date_from", OpenApiTypes.DATETIME, description="Due date from"),
+            OpenApiParameter("due_date_to", OpenApiTypes.DATETIME, description="Due date to"),
+            OpenApiParameter("search", OpenApiTypes.STR, description="Search title or description"),
+            OpenApiParameter("ordering", OpenApiTypes.STR, description="due_date or created_at"),
+        ],
+        responses={
+            status.HTTP_200_OK: TaskReadSerializer(many=True),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+        },
+        examples=[
+            OpenApiExample(
+                "Task list response",
+                value=[
+                    {
+                        "id": 1,
+                        "title": "Call client",
+                        "description": "Confirm next steps",
+                        "assigned_to": 1,
+                        "client": 1,
+                        "deal": 1,
+                        "status": "pending",
+                        "due_date": "2026-05-20T09:00:00Z",
+                    }
+                ],
+                response_only=True,
+            ),
         ],
     ),
-    retrieve=extend_schema(summary="Retrieve task", tags=["Tasks"]),
-    create=extend_schema(summary="Create task", tags=["Tasks"]),
-    update=extend_schema(summary="Replace task (assignee/staff)", tags=["Tasks"]),
-    partial_update=extend_schema(summary="Patch task (assignee/staff)", tags=["Tasks"]),
-    destroy=extend_schema(summary="Delete task (assignee/staff)", tags=["Tasks"]),
+    retrieve=extend_schema(
+        summary="Retrieve task",
+        description="Requires JWT authentication. Any authenticated user may read a task.",
+        tags=["Tasks"],
+        request=None,
+        responses={
+            status.HTTP_200_OK: TaskReadSerializer,
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Task not found"),
+        },
+        examples=[
+            OpenApiExample(
+                "Task detail response",
+                value={
+                    "id": 1,
+                    "title": "Call client",
+                    "description": "Confirm next steps",
+                    "assigned_to": 1,
+                    "client": 1,
+                    "deal": 1,
+                    "status": "pending",
+                    "due_date": "2026-05-20T09:00:00Z",
+                },
+                response_only=True,
+            ),
+        ],
+    ),
+    create=extend_schema(
+        summary="Create task",
+        description="Requires JWT authentication. Any authenticated user may create a task.",
+        tags=["Tasks"],
+        request=TaskWriteSerializer,
+        responses={
+            status.HTTP_201_CREATED: TaskReadSerializer,
+            status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+        },
+        examples=[
+            OpenApiExample(
+                "Create task request",
+                value={
+                    "title": "Call client",
+                    "description": "Confirm next steps",
+                    "assigned_to": 1,
+                    "client": 1,
+                    "deal": 1,
+                    "status": "pending",
+                    "due_date": "2026-05-20T09:00:00Z",
+                },
+                request_only=True,
+            ),
+        ],
+    ),
+    update=extend_schema(
+        summary="Replace task",
+        description="Requires JWT authentication and assignee or staff permission.",
+        tags=["Tasks"],
+        request=TaskWriteSerializer,
+        responses={
+            status.HTTP_200_OK: TaskReadSerializer,
+            status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Assignee or staff permission required"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Task not found"),
+        },
+        examples=[
+            OpenApiExample(
+                "Replace task request",
+                value={
+                    "title": "Call client",
+                    "description": "Confirmed next steps",
+                    "assigned_to": 1,
+                    "client": 1,
+                    "deal": 1,
+                    "status": "in_progress",
+                    "due_date": "2026-05-20T09:00:00Z",
+                },
+                request_only=True,
+            ),
+        ],
+    ),
+    partial_update=extend_schema(
+        summary="Patch task",
+        description="Requires JWT authentication and assignee or staff permission.",
+        tags=["Tasks"],
+        request=TaskWriteSerializer,
+        responses={
+            status.HTTP_200_OK: TaskReadSerializer,
+            status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Assignee or staff permission required"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Task not found"),
+        },
+        examples=[
+            OpenApiExample("Patch task request", value={"status": "completed"}, request_only=True),
+        ],
+    ),
+    destroy=extend_schema(
+        summary="Delete task",
+        description="Requires JWT authentication and assignee or staff permission.",
+        tags=["Tasks"],
+        request=None,
+        responses={
+            status.HTTP_204_NO_CONTENT: OpenApiResponse(description="Task deleted"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Assignee or staff permission required"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Task not found"),
+        },
+        examples=[
+            OpenApiExample("Delete task response", value=None, response_only=True),
+        ],
+    ),
 )
 class TaskViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     """Only the assignee (or staff) can mutate a task."""
 
     queryset = Task.objects.select_related("assigned_to", "client", "deal")
-    filter_backends = (DjangoFilterBackend,)
+    filter_backends = (DjangoFilterBackend, SearchFilter, OrderingFilter)
     filterset_class = TaskFilter
     search_fields = ("title", "description")
     ordering_fields = ("due_date", "created_at")
@@ -348,12 +1097,27 @@ class TaskViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
 
     @extend_schema(
         summary="Task comments",
-        description="GET — list this task's comments. POST — add a comment.",
+        description=(
+            "Requires JWT authentication. GET lists comments for this task; POST creates "
+            "a task comment with author set from request.user."
+        ),
         tags=["Tasks"],
+        request=CommentWriteSerializer,
         responses={
             status.HTTP_200_OK: CommentReadSerializer(many=True),
             status.HTTP_201_CREATED: CommentReadSerializer,
+            status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Task not found"),
         },
+        examples=[
+            OpenApiExample("Create task comment request", value={"body": "Called successfully."}, request_only=True),
+            OpenApiExample(
+                "Task comments response",
+                value=[{"id": 1, "author": 1, "content_type": "task", "object_id": 1, "body": "Called successfully."}],
+                response_only=True,
+            ),
+        ],
     )
     @action(detail=True, methods=["get", "post"], url_path="comments")
     def comments(self, request: Request, pk: int | None = None) -> Response:
@@ -387,19 +1151,128 @@ class TaskViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
         return Response(writer.data, status=status.HTTP_201_CREATED)
 
 
-# Comment 
+# Comment
 @extend_schema_view(
     list=extend_schema(
         summary="List comments",
-        description="Filters: `?target=deal|task`, `?object_id=1`.",
+        description=(
+            "Requires JWT authentication. Supports filtering by target model and object id. "
+            "Returns comments with author/content-type data selected efficiently."
+        ),
         tags=["Comments"],
+        request=None,
         parameters=[
             OpenApiParameter("target", OpenApiTypes.STR, description="Target model: deal | task"),
             OpenApiParameter("object_id", OpenApiTypes.INT, description="Target object id"),
         ],
+        responses={
+            status.HTTP_200_OK: CommentReadSerializer(many=True),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+        },
+        examples=[
+            OpenApiExample(
+                "Comment list response",
+                value=[
+                    {
+                        "id": 1,
+                        "author": 1,
+                        "content_type": "deal",
+                        "object_id": 1,
+                        "body": "Decision maker asked for a proposal.",
+                    }
+                ],
+                response_only=True,
+            ),
+        ],
     ),
-    create=extend_schema(summary="Create comment", tags=["Comments"]),
-    destroy=extend_schema(summary="Delete comment (author/staff)", tags=["Comments"]),
+    retrieve=extend_schema(
+        summary="Retrieve comment",
+        description="Requires JWT authentication. Any authenticated user may read a comment.",
+        tags=["Comments"],
+        request=None,
+        responses={
+            status.HTTP_200_OK: CommentReadSerializer,
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Comment not found"),
+        },
+        examples=[
+            OpenApiExample(
+                "Comment detail response",
+                value={
+                    "id": 1,
+                    "author": 1,
+                    "content_type": "deal",
+                    "object_id": 1,
+                    "body": "Decision maker asked for a proposal.",
+                },
+                response_only=True,
+            ),
+        ],
+    ),
+    create=extend_schema(
+        summary="Create comment",
+        description=(
+            "Requires JWT authentication. Any authenticated user may create a comment; "
+            "author is set from request.user."
+        ),
+        tags=["Comments"],
+        request=CommentWriteSerializer,
+        responses={
+            status.HTTP_201_CREATED: CommentReadSerializer,
+            status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+        },
+        examples=[
+            OpenApiExample(
+                "Create comment request",
+                value={"content_type": "deal", "object_id": 1, "body": "Send proposal tomorrow."},
+                request_only=True,
+            ),
+        ],
+    ),
+    update=extend_schema(
+        summary="Replace comment",
+        description="Not exposed by this API. Comments are append-only; use delete and recreate.",
+        tags=["Comments"],
+        request=CommentWriteSerializer,
+        responses={
+            status.HTTP_405_METHOD_NOT_ALLOWED: OpenApiResponse(description="Method not allowed"),
+        },
+        examples=[
+            OpenApiExample(
+                "Replace comment request",
+                value={"content_type": "deal", "object_id": 1, "body": "Updated body."},
+                request_only=True,
+            ),
+        ],
+    ),
+    partial_update=extend_schema(
+        summary="Patch comment",
+        description="Not exposed by this API. Comments are append-only; use delete and recreate.",
+        tags=["Comments"],
+        request=CommentWriteSerializer,
+        responses={
+            status.HTTP_405_METHOD_NOT_ALLOWED: OpenApiResponse(description="Method not allowed"),
+        },
+        examples=[
+            OpenApiExample("Patch comment request", value={"body": "Updated body."}, request_only=True),
+        ],
+    ),
+    destroy=extend_schema(
+        summary="Delete comment",
+        description="Requires JWT authentication and comment author or staff permission.",
+        tags=["Comments"],
+        request=None,
+        responses={
+            status.HTTP_204_NO_CONTENT: OpenApiResponse(description="Comment deleted"),
+            status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Author or staff permission required"),
+            status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Comment not found"),
+        },
+        examples=[
+            OpenApiExample("Delete comment response", value=None, response_only=True),
+        ],
+    ),
 )
 class CommentViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     """Generic comments attached to a Task or Deal."""

@@ -163,6 +163,10 @@ SPECTACULAR_SETTINGS = {
     "VERSION": "1.0.0",
     "DESCRIPTION": "CRM system for managing clients",
     "SERVE_INCLUDE_SCHEMA": False,
+    "ENUM_NAME_OVERRIDES": {
+        "DealStatusEnum": "crm.models.Deal.Status",
+        "TaskStatusEnum": "crm.models.Task.Status",
+    },
 }
 
 # ─── SimpleJWT ──────────────────────────────────────────────────────────────
@@ -202,14 +206,6 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:8000",
 ]
 
-
-# ─── OpenAPI / Swagger ──────────────────────────────────────────────────────
-SPECTACULAR_SETTINGS = {
-    "TITLE": "Prostoi CRM API",
-    "DESCRIPTION": "CRM system for managing clients, deals, and tasks.",
-    "VERSION": "1.0.0",
-    "SERVE_INCLUDE_SCHEMA": False,
-}
 
 REDIS_URL: str = os.getenv("CRM_REDIS_URL", "redis://127.0.0.1:6379/0")
 
