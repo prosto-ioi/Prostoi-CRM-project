@@ -8,21 +8,26 @@ restricted to the row's owner (or staff).
 """
 
 from __future__ import annotations
-
-from typing import ClassVar, cast
+import asyncio
+import logging
+from typing import ClassVar, cast, Any
 from .pubsub import publish_deal_event
-
+import httpx
+from channels.db import database_sync_to_async
+from django.http import JsonResponse
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import QuerySet
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
+from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view, OpenApiResponse, OpenApiExample
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.serializers import BaseSerializer
+from rest_framework import serializers
+from .serializers import ProductReadSerializer, ProductWriteSerializer
 from django.db import transaction
 from .cache import (
     get_deals_list_cache,
@@ -51,7 +56,7 @@ from .serializers import (
     TaskWriteSerializer,
 )
 from .tasks import send_welcome_email
-
+logger = logging.getLogger(__name__)
 # Actions that mutate state — used by the Read/Write serializer switcher.
 _WRITE_ACTIONS: frozenset[str] = frozenset({"create", "update", "partial_update"})
 
@@ -150,28 +155,57 @@ class ClientViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     list=extend_schema(
         summary="List products",
         description=(
-            "Filters: `?category=slug`, `?min_price=100`, `?max_price=500`, "
-            "`?in_stock=true`, `?search=...`, `?ordering=price`."
+            "Returns a list"
+            "Requires IsAuthenticated"
         ),
         tags=["Products"],
-        parameters=[
-            OpenApiParameter("category", OpenApiTypes.STR, description="Category slug"),
-            OpenApiParameter("min_price", OpenApiTypes.NUMBER, description="Min price"),
-            OpenApiParameter("max_price", OpenApiTypes.NUMBER, description="Max price"),
-            OpenApiParameter("in_stock", OpenApiTypes.BOOL, description="In stock only"),
-            OpenApiParameter("search", OpenApiTypes.STR, description="Search name/description"),
-            OpenApiParameter(
-                "ordering",
-                OpenApiTypes.STR,
-                description="price | -price | created_at",
+        responses={
+            200: ProductReadSerializer(many=True),
+            401: OpenApiResponse(description="Unauthorized"),
+        },
+    ),
+    retrieve=extend_schema(
+        summary="Retrieve product",
+        description=(
+            "Returns one product by its lookup field"
+            "Requires IsAuthenticated"
+        ),
+        tags=["Products"],
+        responses={
+            200: ProductReadSerializer,
+            401: OpenApiResponse(description="Unauthorized"),
+            404: OpenApiResponse(description="Not found"),
+        },
+    ),
+    create=extend_schema(
+        summary="Create product",
+        description=(
+            "Creates a new product"
+            "Requires IsAuthenticated"
+        ),
+        tags=["Products"],
+        request=ProductWriteSerializer,
+        responses={
+            201: ProductReadSerializer,
+            400: OpenApiResponse(description="validation error"),
+            401: OpenApiResponse(description="Unauthorized"),
+            403: OpenApiResponse(description="authenticated user doesn't have permission"),
+        },
+        examples=[
+            OpenApiExample(
+                "Create a product request",
+                value={
+                    "name": "coffee",
+                    "category": 1,
+                    "tags": [1,2],
+                    "price": "4500.00",
+                    "description": "Arabica coffee",
+                    "in_stock": True,
+                },
+                response_only=True,
             ),
         ],
     ),
-    retrieve=extend_schema(summary="Retrieve product (by slug)", tags=["Products"]),
-    create=extend_schema(summary="Create product", tags=["Products"]),
-    update=extend_schema(summary="Replace product (owner/staff)", tags=["Products"]),
-    partial_update=extend_schema(summary="Patch product (owner/staff)", tags=["Products"]),
-    destroy=extend_schema(summary="Delete product (owner/staff)", tags=["Products"]),
 )
 class ProductViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     """Create is open to any authenticated user; per-row mutation is owner-only."""
@@ -405,3 +439,126 @@ class CommentViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     def perform_create(self, serializer: BaseSerializer) -> None:
         # Author is injected from the request — never trusted from input.
         serializer.save(author=self.request.user)
+
+@database_sync_to_async
+def _get_dashboard_database_counts() -> dict[str, int]:
+    return {
+        "clients_count": Client.objects.count(),
+        "deals_count": Deal.objects.count(),
+        "tasks_count": Task.objects.count(),
+    }
+
+async def _fetch_exchange_rates() -> dict[str, Any]:
+    url = "https://open.er-api.com/v6/latest/USD"
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            payload = await response.json()
+        rates = payload.get("rates", {})
+        return {
+            "base": payload.get("base_code", "USD"),
+            "rates":{
+                "KZT": rates.get("KZT"),
+                "RUB": rates.get("RUB"),
+                "EUR": rates.get("EUR"),
+            },
+        }
+    except Exception as exc:
+        logger.warning("failed to fetch exchange rates", exc)
+        return {
+            "base": "USD",
+            "rates": {
+                "KZT": None,
+                "RUB": None,
+                "EUR": None,
+            },
+            "error": "exchange_rates_unavailable",
+        }
+
+async def _fetch_almaty_time() -> dict[str, Any]:
+    url = "https://timeapi.io/api/time/current/zone?timeZone=Asia/Almaty"
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            payload = response.json()
+            return {
+                "dateTime": payload.get("datetime"),
+                "date": payload.get("date"),
+                "time": payload.get("time"),
+                "timeZone": payload.get("timeZone", "Asia/Almaty"),
+            }
+    except Exception as exc:
+        logger.warning("failed to fetch almaty time: %s", exc)
+        return {
+            "dateTime": None,
+            "date": None,
+            "time": None,
+            "timeZone": "Asia/Almaty",
+            "error": "almaty_time_unavailable",
+        }
+
+class DashboardStatsResponceSerializer(serializers.Serializer):
+    database = serializers.DictField(
+        child=serializers.IntegerField(),
+        help_text="Database entity counts",
+    )
+    exchange_rates = serializers.DictField(
+        help_text="Exchange rate payload",
+    )
+    almaty_time = serializers.DictField(
+        help_text="Current Almaty time payload",
+    )
+
+@extend_schema(
+    summary="get Dashboard stats",
+    description="Get Dashboard stats",
+    tags=["Dashboard"],
+    parameters=[],
+    auth=[],
+    responses={
+        200: DashboardStatsResponceSerializer,
+    },
+    examples=[
+        OpenApiExample(
+            "dashboard stats response",
+            value={
+                "database": {
+                    "clients_count": 12,
+                    "deals_count": 8,
+                    "tasks_count": 21,
+                },
+                "exchange_rates": {
+                    "base": "USD",
+                    "rates": {
+                        "KZT": 500,
+                        "RUB": 100,
+                        "EUR": 0.90,
+                    },
+                },
+                "almaty_time": {
+                    "dateTime": "2026-05-16T14:30:00",
+                    "date": "2026-05-16",
+                    "time": "14:30",
+                    "timeZone": "Asia/Almaty",
+                },
+            },
+            response_only=True,
+        ),
+    ],
+)
+async def get_dashboard_stats(request):
+    database_counts, exchange_rates, almaty_time = await asyncio.gather(
+        _get_dashboard_database_counts(),
+        _fetch_exchange_rates(),
+        _fetch_almaty_time(),
+    )
+    return JsonResponse(
+        {
+            "database_counts": database_counts,
+            "exchange_rates": exchange_rates,
+            "almaty_time": almaty_time,
+        }
+    )

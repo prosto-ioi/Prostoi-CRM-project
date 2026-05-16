@@ -16,15 +16,17 @@ from drf_spectacular.views import (
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
-
+from crm.views import get_dashboard_stats
 urlpatterns = [
     # Admin site.
     path("admin/", admin.site.urls),
     # Application APIs.
     path("api/auth/", include("users.urls")),
     path("api/crm/", include("crm.urls")),
+    path("api/stats/", get_dashboard_stats, name="dashboard-stats"),
     # Documentation (OpenAPI schema + interactive viewers).
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
     path("api/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
+
 ]

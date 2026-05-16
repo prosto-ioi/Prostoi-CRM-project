@@ -158,7 +158,12 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 20,
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
-
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Prostoi CRM API",
+    "VERSION": "1.0.0",
+    "DESCRIPTION": "CRM system for managing clients",
+    "SERVE_INCLUDE_SCHEMA": False,
+}
 
 # ─── SimpleJWT ──────────────────────────────────────────────────────────────
 SIMPLE_JWT = {
