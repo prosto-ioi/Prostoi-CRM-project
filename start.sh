@@ -16,14 +16,15 @@ if [ ! -f "settings/.env" ]; then
 fi
 
 source settings/.env
+export DJANGO_SETTINGS_MODULE="settings.env.${CRM_ENV_ID}"
 
 REQUIRED_VARS=("CRM_SECRET_KEY" "CRM_ENV_ID")
 
 for var in "${REQUIRED_VARS[@]}"; do
-    if [ -z "${!var:-}"]; then 
+    if [ -z "${!var:-}" ]; then
         fail "$var is not set in settings/.env"
-    fi 
-done 
+    fi
+done
 
 ok "Environment variables checked."
 

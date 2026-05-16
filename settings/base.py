@@ -242,7 +242,7 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_BEAT_SCHEDULE = {
     "daily-stock-check": {
         "task": "crm.tasks.daily_stock_check",
-        "schedule": crontab(hour=2, minute=0),
+        "schedule": crontab(hour=2, minute=0), # type: ignore
     },
 }
 
@@ -298,7 +298,7 @@ LOGGING = {
     "loggers": {
         "django": {
             "handlers": ["console", "file"],
-            "level": LOG_LEVEL,
+            "level": LOG_LEVEL ,
             "propagate": False,
         },
         # Our own app loggers — keep them named by app for filtering.
