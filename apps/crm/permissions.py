@@ -5,7 +5,7 @@ Classes:
     * IsOwnerOrReadOnly      — write only for the row's owner.
     * IsStaffOrReadOnly      — alias-class for IsAdminOrReadOnly (explicit name).
     * IsCommentAuthor        — write only for the comment's author.
-    * IsAuthenticatedOrReadOnly — read for anyone, write only for authenticated.
+    * IsAthenticatedOrReadOnly — read for anyone, write only for authenticated.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from rest_framework.request import Request
 from rest_framework.views import APIView
 
 
-class IsAuthenticatedOrReadOnly(BasePermission):
+class IsAthenticatedOrReadOnly(BasePermission):
     """Read for anyone (including anonymous); write only for authenticated users.
 
     Different from DRF's built-in by the same name in that anonymous users
