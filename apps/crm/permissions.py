@@ -103,5 +103,24 @@ class IsStaffOrReadOnly(BasePermission):
         return bool(request.user.is_staff)  # type: ignore
 
 
+class IsCommentAuthor(BasePermission):
+    """Write access only for the comment's author.
+
+    Unlike IsOwnerOrReadOnly this class is comment-specific: it checks the
+    'author' field explicitly and gives a more precise error message.
+    Staff/superusers can always mutate.
+    """
+
+    message = "Only the comment author can modify or delete this comment."
+
+    def has_permission(self, request: Request, view: APIView) -> bool:
+        return bool(request.user and request.user.is_authenticated)
+
+    def has_object_permission(self, request: Request, view: APIView, obj: Any) -> bool:
+        if request.method in SAFE_METHODS:
+            return True
+        if request.user.is_staff or request.user.is_superuser:  # type: ignore
+            return True
+        return getattr(obj, "author", None) == request.user
 
 
