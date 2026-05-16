@@ -1,47 +1,43 @@
-# ─── Python ─────────────────────────────────────────────────────────────────
+#  Python 
 __pycache__/
 *.py[cod]
 *$py.class
 
-# ─── Virtual environments ───────────────────────────────────────────────────
-# Anchored with a leading slash so they only match in the repo root.
-# Without the slash, ``env`` would also match ``settings/env/`` and silently
-# hide our environment-overlay package.
-/venv/
+#  Virtual environments 
 /env/
 /.venv/
-
-# ─── Secrets ────────────────────────────────────────────────────────────────
+venv
+#  Secrets 
 .env
 .env.*
 !.env.example
 
-# ─── Database ───────────────────────────────────────────────────────────────
+#  Database 
 db.sqlite3
 db.sqlite3-journal
 
-# ─── Django ─────────────────────────────────────────────────────────────────
+#  Django 
 staticfiles/
 media/
 *.log
 
-# ─── IDE / editors ──────────────────────────────────────────────────────────
+#  IDE / editors 
 .vscode/
 .idea/
 *.swp
 
-# ─── Linter / type-checker caches ───────────────────────────────────────────
+#  Linter / type-checker caches 
 .ruff_cache/
 .mypy_cache/
 .pytest_cache/
 .coverage
 htmlcov/
 
-# ─── Auto-generated type stubs ──────────────────────────────────────────────
+#  Auto-generated type stubs 
 # Pylance "Create Stub for ..." dumps go here; we use real django-stubs /
 # djangorestframework-stubs from pip instead.
 typings/
 
-# ─── OS ─────────────────────────────────────────────────────────────────────
+#  OS 
 .DS_Store
 Thumbs.db
