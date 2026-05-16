@@ -26,7 +26,7 @@ from rest_framework.relations import PrimaryKeyRelatedField, SlugRelatedField
 from .models import Category, Client, Comment, Deal, Product, Tag, Task
 
 
-# ─────────────────────────────── Category ────────────────────────────────
+# Category
 class CategoryReadSerializer(serializers.ModelSerializer):
     """Full category representation with a locale-aware ``name`` field.
 
@@ -71,7 +71,7 @@ class CategoryWriteSerializer(serializers.ModelSerializer):
         return CategoryReadSerializer(instance, context=self.context).data
 
 
-# ─────────────────────────────── Tag ────────────────────────────────
+# Tag
 class TagReadSerializer(serializers.ModelSerializer):
     """Tag read serializer."""
 
@@ -92,7 +92,7 @@ class TagWriteSerializer(serializers.ModelSerializer):
         return TagReadSerializer(instance, context=self.context).data
 
 
-# ─────────────────────────────── Client ────────────────────────────────
+# Client
 class ClientReadSerializer(serializers.ModelSerializer):
     """Full client representation."""
 
@@ -122,7 +122,7 @@ class ClientWriteSerializer(serializers.ModelSerializer):
         return ClientReadSerializer(instance, context=self.context).data
 
 
-# ─────────────────────────────── Product ────────────────────────────────
+# Product
 class ProductReadSerializer(serializers.ModelSerializer):
     """Product with nested ``category`` and ``tags`` detail blocks for the UI."""
 
@@ -174,7 +174,7 @@ class ProductWriteSerializer(serializers.ModelSerializer):
         return ProductReadSerializer(instance, context=self.context).data
 
 
-# ─────────────────────────────── Deal ────────────────────────────────
+# Deal
 class DealReadSerializer(serializers.ModelSerializer):
     """Deal with nested ``client`` and ``product`` detail blocks for the UI."""
 
@@ -211,7 +211,7 @@ class DealWriteSerializer(serializers.ModelSerializer):
         return DealReadSerializer(instance, context=self.context).data
 
 
-# ─────────────────────────────── Task ────────────────────────────────
+# Task
 class TaskReadSerializer(serializers.ModelSerializer):
     """Task read serializer."""
 
@@ -251,7 +251,7 @@ class TaskWriteSerializer(serializers.ModelSerializer):
         return TaskReadSerializer(instance, context=self.context).data
 
 
-# ─────────────────────────────── Comment ────────────────────────────────
+# Comment
 class CommentReadSerializer(serializers.ModelSerializer):
     """Comment read serializer.
 

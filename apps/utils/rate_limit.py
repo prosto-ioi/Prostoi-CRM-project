@@ -7,18 +7,18 @@ INCR + EXPIRE via pipeline — one round-trip to Redis instead of two.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
-from django_redis import get_redis_connection 
+from django_redis import get_redis_connection
 from rest_framework import status
 from rest_framework.response import Response
-
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
 _redis = get_redis_connection("default")
 
-def chck_rate_limit(
+
+def check_rate_limit(
     key: str,
     max_requests: int,
     window: int,
@@ -41,9 +41,9 @@ def chck_rate_limit(
     if current is not None and int(current) >= max_requests:
         # Limit exceeded — tell client how long to wait.
         ttl: int = _redis.ttl(key)
-        logger.warning("Rate limit exceeded: key=%s count=%d", key, current)
+        logger.warning("Rate limit exceeded: key=%s count=%d", key, int(current))
         return False, max(ttl, 0)
-    
+
     # Increment and set expiry in one round-trip via pipeline.
     pipe = _redis.pipeline()
     pipe.incr(key)
@@ -52,28 +52,29 @@ def chck_rate_limit(
 
     new_count: int = results[0]
     logger.debug("Rate limit check: key=%s count=%d/%d", key, new_count, max_requests)
-    return True, 0 
+    return True, 0
+
+
+chck_rate_limit = check_rate_limit
+
 
 def get_client_ip(request: object) -> str:
-
     meta: dict[str, Any] = getattr(request, "META", {})
-    forwarded_for: str = meta.get("HTTP_X_FORWQRDED_FOR", "")
+    forwarded_for: str = meta.get("HTTP_X_FORWARDED_FOR", "")
     if forwarded_for:
         # X-Forwarded-For can be comma-separated — first is the real client.
         return forwarded_for.split(",")[0].strip()
-    return meta.get("REMOTE_ADDR","unknown")
+    return meta.get("REMOTE_ADDR", "unknown")
 
 
-def rate_limit_response(retry_after: int = 0):
+def rate_limit_response(retry_after: int = 0) -> Response:
     """Return a standardised 429 response with Retry-After header.
 
     Args:
         retry_after: Seconds until the window resets.
     """
     response = Response(
-        {
-            "detail": "Too many requests. Try again later." 
-        },
+        {"detail": "Too many requests. Try again later."},
         status=status.HTTP_429_TOO_MANY_REQUESTS,
     )
     if retry_after:
