@@ -11,7 +11,7 @@ import sys
 from datetime import timedelta
 from pathlib import Path
 from celery.schedules import crontab
-# ─── Paths ──────────────────────────────────────────────────────────────────
+# Paths
 BASE_DIR = Path(__file__).resolve().parent.parent
 # Allow ``from users.models import User`` instead of ``apps.users.models`` —
 # the apps directory is added to ``sys.path`` here so import paths in code,
@@ -19,7 +19,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR / "apps"))
 
 
-# ─── Core ───────────────────────────────────────────────────────────────────
+# Core
 SECRET_KEY = os.getenv("CRM_SECRET_KEY")
 if not SECRET_KEY:
     raise ValueError("CRM_SECRET_KEY is not set in .env")
@@ -31,7 +31,7 @@ ALLOWED_HOSTS = ["*"]
 AUTH_USER_MODEL = "users.User"
 
 
-# ─── Apps ───────────────────────────────────────────────────────────────────
+# Apps
 INSTALLED_APPS = [
     "daphne",
     "django.contrib.admin",
@@ -88,7 +88,7 @@ TEMPLATES = [
 WSGI_APPLICATION = "settings.wsgi.application"
 
 
-# ─── Database ───────────────────────────────────────────────────────────────
+# Database
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
@@ -97,7 +97,7 @@ DATABASES = {
 }
 
 
-# ─── Auth & passwords ───────────────────────────────────────────────────────
+# Auth & passwords
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
@@ -106,7 +106,7 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 
-# ─── i18n / TZ ──────────────────────────────────────────────────────────────
+# i18n / TZ
 # Default language used when neither ``user.language`` nor the request's
 # ``Accept-Language`` header points at a supported locale.
 LANGUAGE_CODE = "en"
@@ -133,7 +133,7 @@ USE_I18N = True
 USE_TZ = True
 
 
-# ─── Static / media ─────────────────────────────────────────────────────────
+# Static / media
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
@@ -143,7 +143,7 @@ MEDIA_ROOT = BASE_DIR / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
-# ─── DRF ────────────────────────────────────────────────────────────────────
+# DRF
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
@@ -169,7 +169,7 @@ SPECTACULAR_SETTINGS = {
     },
 }
 
-# ─── SimpleJWT ──────────────────────────────────────────────────────────────
+# SimpleJWT
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
@@ -197,7 +197,7 @@ SIMPLE_JWT = {
 }
 
 
-# ─── CORS ───────────────────────────────────────────────────────────────────
+# CORS
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
@@ -261,6 +261,8 @@ CHANNEL_LAYERS = {
 # set in ``.env`` to bump verbosity (``DEBUG`` for noisy local work,
 # ``WARNING`` for prod).
 LOG_LEVEL = os.getenv("CRM_LOG_LEVEL", "INFO" if not DEBUG else "DEBUG")
+LOG_DIR = BASE_DIR / "logs"
+LOG_DIR.mkdir(exist_ok=True)
 
 LOGGING = {
     "version": 1,
@@ -281,25 +283,32 @@ LOGGING = {
             "class": "logging.StreamHandler",
             "formatter": "verbose",
         },
+        "file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": LOG_DIR / "prostoi_crm.log",
+            "maxBytes": 5 * 1024 * 1024,
+            "backupCount": 5,
+            "formatter": "verbose",
+        },
     },
     "root": {
-        "handlers": ["console"],
+        "handlers": ["console", "file"],
         "level": LOG_LEVEL,
     },
     "loggers": {
         "django": {
-            "handlers": ["console"],
+            "handlers": ["console", "file"],
             "level": LOG_LEVEL,
             "propagate": False,
         },
         # Our own app loggers — keep them named by app for filtering.
         "users": {
-            "handlers": ["console"],
+            "handlers": ["console", "file"],
             "level": LOG_LEVEL,
             "propagate": False,
         },
         "crm": {
-            "handlers": ["console"],
+            "handlers": ["console", "file"],
             "level": LOG_LEVEL,
             "propagate": False,
         },

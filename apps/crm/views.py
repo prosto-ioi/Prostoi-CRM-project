@@ -8,37 +8,46 @@ restricted to the row's owner (or staff).
 """
 
 from __future__ import annotations
+
 import asyncio
 import logging
-from typing import ClassVar, cast, Any
-from .pubsub import publish_deal_event
+from typing import Any, ClassVar, cast
+
 import httpx
+from asgiref.sync import async_to_sync
 from channels.db import database_sync_to_async
-from django.http import JsonResponse
+from channels.layers import get_channel_layer
 from django.contrib.contenttypes.models import ContentType
+from django.db import transaction
 from django.db.models import Count, Prefetch, QuerySet
+from django.http import HttpRequest, JsonResponse
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view, OpenApiResponse, OpenApiExample
-from rest_framework import status, viewsets
+from drf_spectacular.utils import (
+    OpenApiExample,
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+    extend_schema_view,
+)
+from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.serializers import BaseSerializer
-from rest_framework import serializers
-from django.db import transaction
+
 from .cache import (
     get_deals_list_cache,
     invalidate_deals_cache,
+    make_deals_list_cache_key,
     set_deals_list_cache,
 )
-from asgiref.sync import async_to_sync
-from channels.layers import get_channel_layer
 from .filters import DealFilter, ProductFilter, TaskFilter
 from .models import Category, Client, Comment, Deal, Product, Tag, Task
 from .permissions import IsAdminOrReadOnly, IsOwnerOrReadOnly
+from .pubsub import publish_deal_event
 from .serializers import (
     CategoryReadSerializer,
     CategoryWriteSerializer,
@@ -56,6 +65,7 @@ from .serializers import (
     TaskWriteSerializer,
 )
 from .tasks import send_welcome_email
+
 logger = logging.getLogger(__name__)
 # Actions that mutate state — used by the Read/Write serializer switcher.
 _WRITE_ACTIONS: frozenset[str] = frozenset({"create", "update", "partial_update"})
@@ -88,6 +98,47 @@ class ReadWriteSerializerMixin:
         if action_name in _WRITE_ACTIONS:
             return self.write_serializer_class
         return self.read_serializer_class
+
+
+class OwnerMutationPermissionMixin:
+    """Mixin: authenticated reads/creates, owner-or-staff object mutations."""
+
+    owner_mutation_actions: ClassVar[frozenset[str]] = _OBJECT_MUTATE_ACTIONS
+
+    def get_permissions(self) -> list[BasePermission]:
+        if _current_action(cast(viewsets.GenericViewSet, self)) in self.owner_mutation_actions:
+            return [IsOwnerOrReadOnly()]
+        return [IsAuthenticated()]
+
+
+class DealCacheInvalidationMixin:
+    """Mixin: cache and publish deal lifecycle events in one place."""
+
+    def list(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        cache_key = make_deals_list_cache_key(request.get_full_path())
+        cached = get_deals_list_cache(cache_key)
+        if cached is not None:
+            return Response(cached)
+
+        response = super().list(request, *args, **kwargs)
+        set_deals_list_cache(cache_key, response.data)
+        return response
+
+    def perform_create(self, serializer: BaseSerializer) -> None:
+        deal = serializer.save(created_by=self.request.user)
+        invalidate_deals_cache()
+        publish_deal_event("deal_created", deal.id)
+
+    def perform_update(self, serializer: BaseSerializer) -> None:
+        deal = serializer.save()
+        invalidate_deals_cache()
+        publish_deal_event("deal_updated", deal.id)
+
+    def perform_destroy(self, instance: Deal) -> None:
+        deal_id = instance.id
+        instance.delete()
+        invalidate_deals_cache()
+        publish_deal_event("deal_deleted", deal_id)
 
 
 # Category
@@ -180,7 +231,11 @@ class ReadWriteSerializerMixin:
         examples=[
             OpenApiExample(
                 "Replace category request",
-                value={"name_en": "Services", "name_ru": "Услуги", "name_kk": "Қызметтер"},
+                value={
+                    "name_en": "Services",
+                    "name_ru": "Услуги",
+                    "name_kk": "Қызметтер",
+                },
                 request_only=True,
             ),
         ],
@@ -476,7 +531,11 @@ class TagViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
             status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Client not found"),
         },
         examples=[
-            OpenApiExample("Patch client request", value={"phone": "+77009998877"}, request_only=True),
+            OpenApiExample(
+                "Patch client request",
+                value={"phone": "+77009998877"},
+                request_only=True,
+            ),
         ],
     ),
     destroy=extend_schema(
@@ -624,7 +683,9 @@ class ClientViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
             status.HTTP_200_OK: ProductReadSerializer,
             status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
             status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
-            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Owner or staff permission required"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(
+                description="Owner or staff permission required"
+            ),
             status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Product not found"),
         },
         examples=[
@@ -651,7 +712,9 @@ class ClientViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
             status.HTTP_200_OK: ProductReadSerializer,
             status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
             status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
-            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Owner or staff permission required"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(
+                description="Owner or staff permission required"
+            ),
             status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Product not found"),
         },
         examples=[
@@ -666,7 +729,9 @@ class ClientViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
         responses={
             status.HTTP_204_NO_CONTENT: OpenApiResponse(description="Product deleted"),
             status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
-            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Owner or staff permission required"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(
+                description="Owner or staff permission required"
+            ),
             status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Product not found"),
         },
         examples=[
@@ -674,7 +739,11 @@ class ClientViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
         ],
     ),
 )
-class ProductViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
+class ProductViewSet(
+    OwnerMutationPermissionMixin,
+    ReadWriteSerializerMixin,
+    viewsets.ModelViewSet,
+):
     """Create is open to any authenticated user; per-row mutation is owner-only."""
 
     queryset = (
@@ -690,15 +759,10 @@ class ProductViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     read_serializer_class = ProductReadSerializer
     write_serializer_class = ProductWriteSerializer
 
-    def get_permissions(self) -> list[BasePermission]:
-        """``update`` / ``destroy`` → owner-only; anything else → authenticated."""
-        if _current_action(self) in _OBJECT_MUTATE_ACTIONS:
-            return [IsOwnerOrReadOnly()]
-        return [IsAuthenticated()]
-
     def perform_create(self, serializer: BaseSerializer) -> None:
         # Stamp ``created_by`` from the request — never trust client input.
         serializer.save(created_by=self.request.user)
+
     def perform_update(self, serializer: BaseSerializer) -> None:
         product = serializer.save()
         channel_layer = get_channel_layer()
@@ -763,7 +827,10 @@ class ProductViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     ),
     retrieve=extend_schema(
         summary="Retrieve deal",
-        description="Requires JWT authentication. Returns one deal with nested client/product details.",
+        description=(
+            "Requires JWT authentication. Returns one deal with nested "
+            "client/product details."
+        ),
         tags=["Deals"],
         request=None,
         responses={
@@ -825,7 +892,9 @@ class ProductViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
             status.HTTP_200_OK: DealReadSerializer,
             status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
             status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
-            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Owner or staff permission required"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(
+                description="Owner or staff permission required"
+            ),
             status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Deal not found"),
         },
         examples=[
@@ -852,7 +921,9 @@ class ProductViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
             status.HTTP_200_OK: DealReadSerializer,
             status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
             status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
-            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Owner or staff permission required"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(
+                description="Owner or staff permission required"
+            ),
             status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Deal not found"),
         },
         examples=[
@@ -867,7 +938,9 @@ class ProductViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
         responses={
             status.HTTP_204_NO_CONTENT: OpenApiResponse(description="Deal deleted"),
             status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
-            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Owner or staff permission required"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(
+                description="Owner or staff permission required"
+            ),
             status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Deal not found"),
         },
         examples=[
@@ -875,7 +948,12 @@ class ProductViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
         ],
     ),
 )
-class DealViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
+class DealViewSet(
+    DealCacheInvalidationMixin,
+    OwnerMutationPermissionMixin,
+    ReadWriteSerializerMixin,
+    viewsets.ModelViewSet,
+):
     """Create is open to any authenticated user; per-row mutation is owner-only."""
 
     queryset = Deal.objects.select_related("client", "created_by").prefetch_related(
@@ -892,36 +970,6 @@ class DealViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     ordering_fields = ("amount", "created_at")
     read_serializer_class = DealReadSerializer
     write_serializer_class = DealWriteSerializer
-
-    def get_permissions(self) -> list[BasePermission]:
-        if _current_action(self) in _OBJECT_MUTATE_ACTIONS:
-            return [IsOwnerOrReadOnly()]
-        return [IsAuthenticated()]
-
-    def list(self, request, *args, **kwargs):
-        cached = get_deals_list_cache()
-        if cached is not None:
-            return Response(cached)
-        
-        response = super().list(request, *args, **kwargs)
-        set_deals_list_cache(response.data)
-        return response
-
-    def perform_create(self, serializer):
-        deal = serializer.save(created_by=self.request.user)
-        invalidate_deals_cache()
-        publish_deal_event("deal_created", deal.id)
-
-    def perform_update(self, serializer):
-        deal = serializer.save()
-        invalidate_deals_cache()
-        publish_deal_event("deal_updated", deal.id)
-
-    def perform_destroy(self, instance):
-        deal_id = instance.id
-        instance.delete()
-        invalidate_deals_cache()
-        publish_deal_event("deal_deleted", deal_id)
 
 # Task
 @extend_schema_view(
@@ -1028,7 +1076,9 @@ class DealViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
             status.HTTP_200_OK: TaskReadSerializer,
             status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
             status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
-            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Assignee or staff permission required"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(
+                description="Assignee or staff permission required"
+            ),
             status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Task not found"),
         },
         examples=[
@@ -1056,7 +1106,9 @@ class DealViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
             status.HTTP_200_OK: TaskReadSerializer,
             status.HTTP_400_BAD_REQUEST: OpenApiResponse(description="Validation error"),
             status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
-            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Assignee or staff permission required"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(
+                description="Assignee or staff permission required"
+            ),
             status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Task not found"),
         },
         examples=[
@@ -1071,7 +1123,9 @@ class DealViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
         responses={
             status.HTTP_204_NO_CONTENT: OpenApiResponse(description="Task deleted"),
             status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
-            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Assignee or staff permission required"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(
+                description="Assignee or staff permission required"
+            ),
             status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Task not found"),
         },
         examples=[
@@ -1079,7 +1133,11 @@ class DealViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
         ],
     ),
 )
-class TaskViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
+class TaskViewSet(
+    OwnerMutationPermissionMixin,
+    ReadWriteSerializerMixin,
+    viewsets.ModelViewSet,
+):
     """Only the assignee (or staff) can mutate a task."""
 
     queryset = Task.objects.select_related("assigned_to", "client", "deal")
@@ -1089,11 +1147,6 @@ class TaskViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
     ordering_fields = ("due_date", "created_at")
     read_serializer_class = TaskReadSerializer
     write_serializer_class = TaskWriteSerializer
-
-    def get_permissions(self) -> list[BasePermission]:
-        if _current_action(self) in _OBJECT_MUTATE_ACTIONS:
-            return [IsOwnerOrReadOnly()]
-        return [IsAuthenticated()]
 
     @extend_schema(
         summary="Task comments",
@@ -1111,10 +1164,22 @@ class TaskViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
             status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Task not found"),
         },
         examples=[
-            OpenApiExample("Create task comment request", value={"body": "Called successfully."}, request_only=True),
+            OpenApiExample(
+                "Create task comment request",
+                value={"body": "Called successfully."},
+                request_only=True,
+            ),
             OpenApiExample(
                 "Task comments response",
-                value=[{"id": 1, "author": 1, "content_type": "task", "object_id": 1, "body": "Called successfully."}],
+                value=[
+                    {
+                        "id": 1,
+                        "author": 1,
+                        "content_type": "task",
+                        "object_id": 1,
+                        "body": "Called successfully.",
+                    }
+                ],
                 response_only=True,
             ),
         ],
@@ -1255,7 +1320,11 @@ class TaskViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
             status.HTTP_405_METHOD_NOT_ALLOWED: OpenApiResponse(description="Method not allowed"),
         },
         examples=[
-            OpenApiExample("Patch comment request", value={"body": "Updated body."}, request_only=True),
+            OpenApiExample(
+                "Patch comment request",
+                value={"body": "Updated body."},
+                request_only=True,
+            ),
         ],
     ),
     destroy=extend_schema(
@@ -1266,7 +1335,9 @@ class TaskViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
         responses={
             status.HTTP_204_NO_CONTENT: OpenApiResponse(description="Comment deleted"),
             status.HTTP_401_UNAUTHORIZED: OpenApiResponse(description="Unauthorized"),
-            status.HTTP_403_FORBIDDEN: OpenApiResponse(description="Author or staff permission required"),
+            status.HTTP_403_FORBIDDEN: OpenApiResponse(
+                description="Author or staff permission required"
+            ),
             status.HTTP_404_NOT_FOUND: OpenApiResponse(description="Comment not found"),
         },
         examples=[
@@ -1274,19 +1345,18 @@ class TaskViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
         ],
     ),
 )
-class CommentViewSet(ReadWriteSerializerMixin, viewsets.ModelViewSet):
+class CommentViewSet(
+    OwnerMutationPermissionMixin,
+    ReadWriteSerializerMixin,
+    viewsets.ModelViewSet,
+):
     """Generic comments attached to a Task or Deal."""
 
     # No PATCH / PUT — comments are append-only by design.
     http_method_names = ("get", "post", "delete")  # type: ignore
+    owner_mutation_actions = frozenset({"destroy"})
     read_serializer_class = CommentReadSerializer
     write_serializer_class = CommentWriteSerializer
-
-    def get_permissions(self) -> list[BasePermission]:
-        # Only the author (or staff) can delete; anyone authenticated can list/create.
-        if _current_action(self) == "destroy":
-            return [IsOwnerOrReadOnly()]
-        return [IsAuthenticated()]
 
     def get_queryset(self) -> QuerySet[Comment]:
         # ``self.request`` is a DRF ``Request`` at runtime, but DRF generics
@@ -1328,7 +1398,7 @@ async def _fetch_exchange_rates() -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(url)
             response.raise_for_status()
-            payload = await response.json()
+            payload = response.json()
         rates = payload.get("rates", {})
         return {
             "base": payload.get("base_code", "USD"),
@@ -1339,7 +1409,7 @@ async def _fetch_exchange_rates() -> dict[str, Any]:
             },
         }
     except Exception as exc:
-        logger.warning("failed to fetch exchange rates", exc)
+        logger.warning("failed to fetch exchange rates: %s", exc)
         return {
             "base": "USD",
             "rates": {
@@ -1422,7 +1492,7 @@ class DashboardStatsResponceSerializer(serializers.Serializer):
         ),
     ],
 )
-async def get_dashboard_stats(request):
+async def get_dashboard_stats(request: HttpRequest) -> JsonResponse:
     database_counts, exchange_rates, almaty_time = await asyncio.gather(
         _get_dashboard_database_counts(),
         _fetch_exchange_rates(),
@@ -1430,7 +1500,7 @@ async def get_dashboard_stats(request):
     )
     return JsonResponse(
         {
-            "database_counts": database_counts,
+            "database": database_counts,
             "exchange_rates": exchange_rates,
             "almaty_time": almaty_time,
         }
