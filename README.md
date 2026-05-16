@@ -81,7 +81,7 @@ The Docker setup runs the full backend stack:
 ### 1. Clone the repository
 
 ```bash
-git clone <https://github.com/prosto-ioi/Prostoi-CRM-project.git>
+git clone https://github.com/prosto-ioi/Prostoi-CRM-project.git
 cd final
 ```
 
