@@ -1,10 +1,11 @@
 """Custom DRF permissions used by the CRM viewsets.
 
-Two classes:
-    * :class:`IsAdminOrReadOnly` — read-only for everyone authenticated,
-      write only for staff/superuser. Use for reference data (categories, tags).
-    * :class:`IsOwnerOrReadOnly` — read for any authenticated user, write only
-      for the row's "owner" (``author`` / ``created_by`` / ``assigned_to``).
+Classes:
+    * IsAdminOrReadOnly      — write only for staff/superuser.
+    * IsOwnerOrReadOnly      — write only for the row's owner.
+    * IsStaffOrReadOnly      — alias-class for IsAdminOrReadOnly (explicit name).
+    * IsCommentAuthor        — write only for the comment's author.
+    * IsAthenticatedOrReadOnly — read for anyone, write only for authenticated.
 """
 
 from __future__ import annotations
@@ -14,6 +15,22 @@ from typing import Any, ClassVar
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 from rest_framework.request import Request
 from rest_framework.views import APIView
+
+
+class IsAthenticatedOrReadOnly(BasePermission):
+    """Read for anyone (including anonymous); write only for authenticated users.
+
+    Different from DRF's built-in by the same name in that anonymous users
+    get 401 on write attempts rather than being silently passed to the view.
+    Use when public read access is intentional (e.g. a public product catalog).
+    """
+
+    message = "Authentication is required to perform this action."
+
+    def has_permission(self, request: Request, view: APIView) -> bool:
+        if request.method in SAFE_METHODS:
+            return True
+        return bool(request.user and request.user.is_authenticated)
 
 
 class IsAdminOrReadOnly(BasePermission):
@@ -26,28 +43,25 @@ class IsAdminOrReadOnly(BasePermission):
     message = "Only staff users can modify this resource."
 
     def has_permission(self, request: Request, view: APIView) -> bool:
-        # Anonymous users are rejected outright — DRF turns this into 401
-        # when no authentication class has populated the user.
         if not request.user or not request.user.is_authenticated:
             return False
         # GET / HEAD / OPTIONS — open to any authenticated user.
         if request.method in SAFE_METHODS:
             return True
         # Mutating methods — staff/superuser only.
-        return bool(request.user.is_staff or request.user.is_superuser)
+        return bool(request.user.is_staff or request.user.is_superuser) # type: ignore
 
 
 class IsOwnerOrReadOnly(BasePermission):
     """Read for any authenticated user; write only for the row's owner.
 
-    "Owner" is resolved at the object level by looking up — in order — the
-    first attribute on the instance from :attr:`OWNER_FIELDS`. Staff and
-    superusers always pass the object check (admin override).
+    Owner is resolved by looking up the first matching attribute from
+    OWNER_FIELDS on the object. Staff/superusers always pass.
     """
 
     message = "You do not have permission to modify this object."
 
-    #: Attribute names checked when resolving the row's owner.
+    # Attribute names checked when resolving the row's owner.
     OWNER_FIELDS: ClassVar[tuple[str, ...]] = ("author", "created_by", "assigned_to")
 
     def has_permission(self, request: Request, view: APIView) -> bool:
@@ -60,15 +74,53 @@ class IsOwnerOrReadOnly(BasePermission):
         view: APIView,
         obj: Any,
     ) -> bool:
-        # Anyone authenticated can read.
         if request.method in SAFE_METHODS:
             return True
         # Staff override — admins can mutate any row.
-        if request.user.is_staff or request.user.is_superuser:
+        if request.user.is_staff or request.user.is_superuser: # type: ignore
             return True
         # Walk the candidate owner fields; first one that exists decides.
         for field in self.OWNER_FIELDS:
             if hasattr(obj, field):
                 return getattr(obj, field) == request.user
-        # No owner field on the model — fail closed.
         return False
+
+
+class IsStaffOrReadOnly(BasePermission):
+    """Explicit staff-only write permission.
+
+    Functionally identical to IsAdminOrReadOnly but with a name that makes
+    intent clear when applied to staff-gated endpoints (not just admin panel).
+    """
+
+    message = "Only staff members can perform this action."
+
+    def has_permission(self, request: Request, view: APIView) -> bool:
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.method in SAFE_METHODS:
+            return True
+        return bool(request.user.is_staff)  # type: ignore
+
+
+class IsCommentAuthor(BasePermission):
+    """Write access only for the comment's author.
+
+    Unlike IsOwnerOrReadOnly this class is comment-specific: it checks the
+    'author' field explicitly and gives a more precise error message.
+    Staff/superusers can always mutate.
+    """
+
+    message = "Only the comment author can modify or delete this comment."
+
+    def has_permission(self, request: Request, view: APIView) -> bool:
+        return bool(request.user and request.user.is_authenticated)
+
+    def has_object_permission(self, request: Request, view: APIView, obj: Any) -> bool:
+        if request.method in SAFE_METHODS:
+            return True
+        if request.user.is_staff or request.user.is_superuser:  # type: ignore
+            return True
+        return getattr(obj, "author", None) == request.user
+
+
